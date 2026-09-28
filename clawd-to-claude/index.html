@@ -1,0 +1,973 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clawd → Claude</title>
+<meta name="description" content="一只 Clawd 分裂成 64 只，最后拼成 Claude 的星芒图标。">
+<style>
+  :root {
+    --page: #F0EEE6;
+    --stage: #FAF9F5;
+    --fg: #141413;
+    --muted: #6B6A63;
+    --line: #DEDACD;
+    --btn: #E6E3D8;
+    --btn-hover: #DAD6C8;
+    --accent: #D97757;
+    --accent-hover: #C8684A;
+    --eye: #141413;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --page: #1F1E1D;
+      --stage: #262624;
+      --fg: #F0EEE6;
+      --muted: #A3A198;
+      --line: #3A3936;
+      --btn: #33322F;
+      --btn-hover: #3E3D3A;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page: #1F1E1D;
+    --stage: #262624;
+    --fg: #F0EEE6;
+    --muted: #A3A198;
+    --line: #3A3936;
+    --btn: #33322F;
+    --btn-hover: #3E3D3A;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    min-height: 100vh;
+    background: var(--page);
+    color: var(--fg);
+    font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 24px 16px;
+  }
+  main { width: 100%; max-width: 540px; }
+  h1 {
+    margin: 0 0 4px;
+    font-size: 26px;
+    letter-spacing: -0.01em;
+    font-weight: 650;
+  }
+  h1 .arrow { color: var(--accent); }
+  .sub { margin: 0 0 18px; color: var(--muted); }
+
+  .stage {
+    position: relative;
+    border-radius: 20px;
+    overflow: hidden;
+    background: var(--stage);
+    box-shadow: 0 0 0 1px var(--line), 0 12px 32px -18px rgba(20, 20, 19, 0.35);
+  }
+  canvas { display: block; width: 100%; aspect-ratio: 1; }
+
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 14px;
+  }
+  .bar input[type="range"] { flex: 1; min-width: 0; accent-color: var(--accent); }
+  .time {
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    font-size: 13px;
+    min-width: 76px;
+    text-align: right;
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .row .spacer { flex: 1; }
+
+  button {
+    font: inherit;
+    font-size: 14px;
+    color: var(--fg);
+    background: var(--btn);
+    border: 0;
+    border-radius: 999px;
+    padding: 7px 14px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  button:hover { background: var(--btn-hover); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button:disabled { opacity: 0.6; cursor: progress; }
+  .icon {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    flex: none;
+  }
+  .icon svg { width: 16px; height: 16px; fill: currentColor; }
+  .icon svg[hidden] { display: none; }
+  .seg { display: inline-flex; background: var(--btn); border-radius: 999px; padding: 3px; }
+  .seg button { background: transparent; padding: 4px 11px; }
+  .seg button[aria-pressed="true"] { background: var(--stage); box-shadow: 0 0 0 1px var(--line); }
+  .primary { background: var(--accent); color: #fff; }
+  .primary:hover { background: var(--accent-hover); }
+  .note { margin: 14px 0 0; font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Clawd <span class="arrow">→</span> Claude</h1>
+  <p class="sub">一只 Clawd 不停分裂成 64 只，最后拼成 Claude 的星芒。</p>
+
+  <div class="stage">
+    <canvas id="stage" width="500" height="500" role="img"
+      aria-label="动画：一只橙色像素小螃蟹 Clawd 分裂成越来越多的 Clawd，它们飞到一起组成 Claude 的星芒图标"></canvas>
+  </div>
+
+  <div class="bar">
+    <button class="icon" id="toggle" aria-label="暂停">
+      <svg id="icon-pause" viewBox="0 0 16 16"><rect x="3" y="2" width="3.5" height="12" rx="1"/><rect x="9.5" y="2" width="3.5" height="12" rx="1"/></svg>
+      <svg id="icon-play" viewBox="0 0 16 16" hidden><path d="M4 2.2v11.6c0 .8.9 1.3 1.6.8l8.6-5.8c.6-.4.6-1.2 0-1.6L5.6 1.4C4.9.9 4 1.4 4 2.2z"/></svg>
+    </button>
+    <input id="scrub" type="range" min="0" max="1" step="0.0005" value="0" aria-label="时间轴">
+    <span class="time" id="time">0.00 s</span>
+  </div>
+
+  <div class="row">
+    <div class="seg" role="group" aria-label="播放速度">
+      <button data-speed="0.25" aria-pressed="false">0.25×</button>
+      <button data-speed="0.5" aria-pressed="false">0.5×</button>
+      <button data-speed="1" aria-pressed="true">1×</button>
+      <button data-speed="2" aria-pressed="false">2×</button>
+    </div>
+    <span class="spacer"></span>
+    <button id="theme">切换主题</button>
+    <button id="gif" class="primary">导出 GIF</button>
+  </div>
+  <p class="note">空格 播放/暂停 · ← → 逐帧 · 星芒图形来自 Simple Icons（CC0），Claude 与其标志归 Anthropic 所有。</p>
+</main>
+
+<script>
+(() => {
+  'use strict';
+
+  // ───────────────────────── Stage & timeline ─────────────────────────
+
+  // Claude spark, 24×24 viewBox (Simple Icons, CC0).
+  const SPARK = new Path2D('m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z');
+
+  const W = 500, H = 500;            // logical stage size (px)
+  const CX = 250, CY = 228;          // stage centre; the caption sits underneath
+  const K = 17;                      // spark scale: one viewBox unit → 17 px
+  const GRID_W = 440, GRID_H = 392;  // area the dividing Clawds tile
+  // Split g → g+1 starts at t and takes d seconds (plus per-Clawd jitter).
+  const SPLITS = [
+    { t: 1.10, d: 0.80 }, { t: 2.05, d: 0.70 }, { t: 2.90, d: 0.62 },
+    { t: 3.64, d: 0.56 }, { t: 4.30, d: 0.52 }, { t: 4.92, d: 0.52 },
+  ];
+  const FINAL_GEN = SPLITS.length;   // 2^6 = 64 Clawds build the spark
+  const JITTER = 0.12;               // max per-Clawd delay inside a split
+  const ANT = 0.3;                   // share of a split spent squashing before it pops
+  const T_FLY = 5.8, STAGGER = 0.5, FLIGHT = 1.2;
+  const T_WAVE = 7.62;               // a hop ripples outward through the formation
+  const T_MERGE = 8.3, MERGE_DUR = 0.85, T_MERGE_END = T_MERGE + MERGE_DUR;
+  const MERGE_BAND = 30;
+  const T_COLLAPSE = 10.68, TOTAL = 11.16;
+
+  // ───────────────────────── Helpers ─────────────────────────
+
+  const TAU = Math.PI * 2;
+  const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const easeOutCubic = (t) => 1 - (1 - t) ** 3;
+  const easeInCubic = (t) => t * t * t;
+  const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+  const easeInOutSine = (t) => -(Math.cos(Math.PI * t) - 1) / 2;
+  const easeOutBack = (t, s = 1.70158) => 1 + (s + 1) * (t - 1) ** 3 + s * (t - 1) ** 2;
+  const easeInBack = (t, s = 1.70158) => (s + 1) * t * t * t - s * t * t;
+  const angDiff = (a, b) => ((((b - a) % TAU) + 3 * Math.PI) % TAU) - Math.PI;
+
+  function hash01(n) {
+    n = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b);
+    n ^= n >>> 13;
+    n = Math.imul(n, 0xc2b2ae35);
+    n ^= n >>> 16;
+    return (n >>> 0) / 4294967296;
+  }
+
+  const PAL = {};
+  function readPalette() {
+    const cs = getComputedStyle(document.documentElement);
+    PAL.bg = cs.getPropertyValue('--stage').trim();
+    PAL.fg = cs.getPropertyValue('--fg').trim();
+    PAL.clawd = cs.getPropertyValue('--accent').trim();
+    PAL.eye = cs.getPropertyValue('--eye').trim();
+  }
+
+  // ───────────────────────── Clawd sprite ─────────────────────────
+  // 16×10 pixel grid, the Claude Code welcome-screen mascot with square pixels:
+  //   ..############..
+  //   ..############..
+  //   ..##.######.##..   ← eyes
+  //   ..##.######.##..
+  //   ################   ← arms
+  //   ################
+  //   ..############..
+  //   ..############..
+  //   ...#.#....#.#...   ← legs
+  //   ...#.#....#.#...
+
+  function clawdPath(legs) {
+    const p = new Path2D();
+    p.rect(2, 0, 12, 8);
+    p.rect(0, 4, 16, 2);
+    for (const [x, h] of legs) p.rect(x, 7.5, 1, h + 0.5);
+    return p;
+  }
+  const CLAWD = [
+    clawdPath([[3, 2], [5, 2], [10, 2], [12, 2]]),
+    clawdPath([[3, 1], [5, 2], [10, 1], [12, 2]]),
+  ];
+
+  // (x, y) is the sprite centre, u the size of one sprite pixel.
+  function drawClawd(ctx, x, y, u, o = {}) {
+    const alpha = o.alpha ?? 1;
+    if (u < 0.02 || alpha <= 0.004) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(x, y);
+    if (o.rot) ctx.rotate(o.rot);
+    ctx.scale(u * (o.sx ?? 1), u * (o.sy ?? 1));
+    ctx.translate(-8, -5);
+    ctx.fillStyle = PAL.clawd;
+    ctx.fill(CLAWD[o.leg | 0]);
+    const eh = 2 - 1.55 * (o.blink || 0);
+    ctx.fillStyle = PAL.eye;
+    ctx.fillRect(4, 4 - eh, 1, eh);
+    ctx.fillRect(11, 4 - eh, 1, eh);
+    ctx.restore();
+  }
+
+  function idleState(t, id) {
+    const ph = t * 1.25 + hash01(id * 3 + 1);
+    return {
+      bob: Math.max(0, Math.sin(ph * TAU)),
+      leg: Math.sin(ph * TAU * 2) > 0 ? 1 : 0,
+      blink: (t / 2.6 + hash01(id * 3 + 2)) % 1 < 0.055 ? 1 : 0,
+    };
+  }
+
+  // ───────────────────────── Dividing grid ─────────────────────────
+  // Generation g has 2^g Clawds on a cols×rows grid; even generations split
+  // sideways, odd ones split vertically, so each child lands next to its parent.
+
+  const gridOf = (g) => ({ cols: 2 ** Math.ceil(g / 2), rows: 2 ** Math.floor(g / 2) });
+  const cid = (g, c, r) => (g << 12) | (r << 6) | c;
+
+  function gridPos(g, c, r) {
+    const { cols, rows } = gridOf(g);
+    return { x: CX + (c + 0.5 - cols / 2) * (GRID_W / cols), y: CY + (r + 0.5 - rows / 2) * (GRID_H / rows) };
+  }
+  function gridUnit(g) {
+    const { cols, rows } = gridOf(g);
+    return Math.min(7, (0.62 * GRID_W) / cols / 16, (0.5 * GRID_H) / rows / 10);
+  }
+  function kidsOf(g, c, r) {
+    return g % 2 === 0 ? [[2 * c, r], [2 * c + 1, r]] : [[c, 2 * r], [c, 2 * r + 1]];
+  }
+  function parentOf(g, c, r) {
+    return (g - 1) % 2 === 0 ? [c >> 1, r] : [c, r >> 1];
+  }
+
+  const FLY_START = new Float64Array(64);  // gen-6 Clawd → time it takes off for the spark
+
+  function splitStart(g, c, r) {
+    if (g === FINAL_GEN) return FLY_START[r * 8 + c];
+    return SPLITS[g].t + hash01(cid(g, c, r) ^ 0x55) * JITTER;
+  }
+  function bornAt(g, c, r) {
+    if (g === 0) return 0.45;
+    const [pc, pr] = parentOf(g, c, r);
+    return splitStart(g - 1, pc, pr) + SPLITS[g - 1].d - JITTER;
+  }
+
+  function drawGridClawd(ctx, t, g, c, r) {
+    const P = gridPos(g, c, r), id = cid(g, c, r);
+    let u = gridUnit(g);
+    if (g === 0) u *= Math.max(0, easeOutBack(clamp(t / 0.45), 2.2));
+    const w = Math.min(clamp((t - bornAt(g, c, r)) / 0.25), clamp((splitStart(g, c, r) - t) / 0.2));
+    const s = idleState(t, id);
+    const blink = g === 0 && t > 0.72 && t < 0.86 ? 1 : s.blink;
+    drawClawd(ctx, P.x, P.y - s.bob * 0.9 * u * w, u, { leg: w > 0.5 ? s.leg : 0, blink });
+  }
+
+  function drawSplitting(ctx, t, g, c, r) {
+    const dur = SPLITS[g].d - JITTER;
+    const p = (t - splitStart(g, c, r)) / dur;
+    if (p <= 0) return drawGridClawd(ctx, t, g, c, r);
+    const kids = kidsOf(g, c, r);
+    if (p >= 1) { for (const [kc, kr] of kids) drawGridClawd(ctx, t, g + 1, kc, kr); return; }
+
+    const P = gridPos(g, c, r), u0 = gridUnit(g);
+    const [ax, ay] = g % 2 === 0 ? [0.34, -0.22] : [-0.16, 0.3];  // squash along the split axis
+    if (p < ANT) {
+      const e = Math.sin((p / ANT) * Math.PI / 2), sx = 1 + ax * e, sy = 1 + ay * e;
+      drawClawd(ctx, P.x, P.y + 5 * u0 * (1 - sy), u0, { sx, sy, blink: e > 0.6 ? 1 : 0 });
+      return;
+    }
+    const q = (p - ANT) / (1 - ANT), u1 = gridUnit(g + 1);
+    const e = easeOutBack(q, 1.1), eu = easeOutCubic(q), arc = Math.sin(Math.PI * q);
+    for (const [kc, kr] of kids) {
+      const C = gridPos(g + 1, kc, kr);
+      const hop = Math.max(14, Math.hypot(C.x - P.x, C.y - P.y) * 0.35);
+      const u = lerp(u0, u1, eu);
+      const sx = lerp(1 + ax, 1, eu) - 0.08 * arc, sy = lerp(1 + ay, 1, eu) + 0.12 * arc;
+      drawClawd(ctx, lerp(P.x, C.x, e), lerp(P.y, C.y, e) - arc * hop + 5 * u * (1 - sy), u, { sx, sy, leg: 1 });
+    }
+  }
+
+  function drawGridPhase(ctx, t) {
+    let s = -1;
+    while (s + 1 < SPLITS.length && t >= SPLITS[s + 1].t) s++;
+    if (s < 0) return drawGridClawd(ctx, t, 0, 0, 0);
+    const { cols, rows } = gridOf(s);
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) drawSplitting(ctx, t, s, c, r);
+  }
+
+  // ───────────────────────── Spark formation ─────────────────────────
+  // Rasterise the spark once, find its hub (deepest interior point) and its
+  // rays (long spokes of the radial reach profile), then stack Clawds up each
+  // ray, heads pointing outward, with one big Clawd sitting in the hub.
+
+  function analyzeSpark() {
+    const S = 10, N = 240;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = N;
+    const g = cv.getContext('2d', { willReadFrequently: true });
+    g.scale(S, S);
+    g.fill(SPARK);
+    const img = g.getImageData(0, 0, N, N).data;
+    const mask = new Uint8Array(N * N);
+    for (let i = 0; i < N * N; i++) mask[i] = img[i * 4 + 3] > 127 ? 1 : 0;
+    const inside = (x, y) => {
+      const X = Math.floor(x * S), Y = Math.floor(y * S);
+      return X >= 0 && Y >= 0 && X < N && Y < N && mask[Y * N + X] === 1;
+    };
+
+    // Two-pass chamfer distance transform.
+    const dist = new Float32Array(N * N);
+    for (let i = 0; i < N * N; i++) dist[i] = mask[i] ? 1e9 : 0;
+    const pass = (dir) => {
+      const y0 = dir > 0 ? 0 : N - 1, x0 = y0;
+      for (let y = y0; y >= 0 && y < N; y += dir) {
+        for (let x = x0; x >= 0 && x < N; x += dir) {
+          const i = y * N + x;
+          if (!dist[i]) continue;
+          let d = dist[i];
+          const xb = x - dir, yb = y - dir, xf = x + dir;
+          if (xb >= 0 && xb < N) d = Math.min(d, dist[i - dir] + 1);
+          if (yb >= 0 && yb < N) {
+            d = Math.min(d, dist[i - dir * N] + 1);
+            if (xb >= 0 && xb < N) d = Math.min(d, dist[i - dir * N - dir] + Math.SQRT2);
+            if (xf >= 0 && xf < N) d = Math.min(d, dist[i - dir * N + dir] + Math.SQRT2);
+          }
+          dist[i] = d;
+        }
+      }
+    };
+    pass(1);
+    pass(-1);
+    let best = 0, bi = 0;
+    for (let i = 0; i < N * N; i++) if (dist[i] > best) { best = dist[i]; bi = i; }
+    const hub = { x: ((bi % N) + 0.5) / S, y: (Math.floor(bi / N) + 0.5) / S };
+    const hubR = best / S;
+
+    const reach = new Float32Array(360);
+    for (let k = 0; k < 360; k++) {
+      const dx = Math.cos((k * Math.PI) / 180), dy = Math.sin((k * Math.PI) / 180);
+      let s = 0;
+      while (s < 20 && inside(hub.x + dx * s, hub.y + dy * s)) s += 0.02;
+      reach[k] = s;
+    }
+    const thr = hubR * 2;
+    let start = 0;
+    while (start < 359 && reach[start] > thr) start++;
+    const rays = [];
+    let cur = -1;
+    for (let i = 1; i <= 360; i++) {
+      const k = (start + i) % 360;
+      if (reach[k] > thr) { if (cur < 0 || reach[k] > reach[cur]) cur = k; }
+      else if (cur >= 0) {
+        const a = (cur * Math.PI) / 180;
+        rays.push({ dir: { x: Math.cos(a), y: Math.sin(a) }, len: reach[cur] });
+        cur = -1;
+      }
+    }
+    return { inside, hub, hubR, rays, maxReach: Math.max(...reach) };
+  }
+
+  // Width and midpoint of a ray measured across direction n through (px, py).
+  function crossSection(inside, px, py, n) {
+    let ox = px, oy = py;
+    if (!inside(ox, oy)) {
+      let found = false;
+      for (let d = 0.05; d < 1.2 && !found; d += 0.05) {
+        for (const sg of [1, -1]) {
+          if (inside(px + n.x * d * sg, py + n.y * d * sg)) { ox = px + n.x * d * sg; oy = py + n.y * d * sg; found = true; break; }
+        }
+      }
+      if (!found) return { x: px, y: py, w: 1 };
+    }
+    let a = 0, b = 0;
+    while (a < 1.6 && inside(ox - n.x * (a + 0.02), oy - n.y * (a + 0.02))) a += 0.02;
+    while (b < 1.6 && inside(ox + n.x * (b + 0.02), oy + n.y * (b + 0.02))) b += 0.02;
+    const m = (b - a) / 2;
+    return { x: ox + n.x * m, y: oy + n.y * m, w: a + b };
+  }
+
+  function apportion(weights, total) {
+    const sum = weights.reduce((a, b) => a + b, 0);
+    const raw = weights.map((w) => (w / sum) * total), out = raw.map(Math.floor);
+    const left = total - out.reduce((a, b) => a + b, 0);
+    raw.map((v, i) => [v - out[i], i]).sort((a, b) => b[0] - a[0]).slice(0, left).forEach(([, i]) => out[i]++);
+    return out;
+  }
+
+  // Min-cost perfect matching (Hungarian algorithm); returns row → column.
+  function hungarian(cost) {
+    const n = cost.length, INF = Infinity;
+    const u = new Float64Array(n + 1), v = new Float64Array(n + 1);
+    const p = new Int32Array(n + 1), way = new Int32Array(n + 1);
+    for (let i = 1; i <= n; i++) {
+      p[0] = i;
+      let j0 = 0;
+      const minv = new Float64Array(n + 1).fill(INF), used = new Uint8Array(n + 1);
+      do {
+        used[j0] = 1;
+        const i0 = p[j0];
+        let delta = INF, j1 = 0;
+        for (let j = 1; j <= n; j++) {
+          if (used[j]) continue;
+          const c = cost[i0 - 1][j - 1] - u[i0] - v[j];
+          if (c < minv[j]) { minv[j] = c; way[j] = j0; }
+          if (minv[j] < delta) { delta = minv[j]; j1 = j; }
+        }
+        for (let j = 0; j <= n; j++) {
+          if (used[j]) { u[p[j]] += delta; v[j] -= delta; } else minv[j] -= delta;
+        }
+        j0 = j1;
+      } while (p[j0] !== 0);
+      do { const j1 = way[j0]; p[j0] = p[j1]; j0 = j1; } while (j0);
+    }
+    const out = new Int32Array(n);
+    for (let j = 1; j <= n; j++) out[p[j] - 1] = j - 1;
+    return out;
+  }
+
+  const GEO = analyzeSpark();
+  const HUB_X = CX + (GEO.hub.x - 12) * K, HUB_Y = CY + (GEO.hub.y - 12) * K;
+  const RHO_MAX = GEO.maxReach * K;
+  const RAY_TIPS = GEO.rays.map((r) => ({
+    x: HUB_X + r.dir.x * r.len * K, y: HUB_Y + r.dir.y * r.len * K,
+  }));
+
+  // One Clawd as big as the very first one sits in the hub; the other 63 are
+  // spread over the rays in proportion to their length.
+  function buildTargets() {
+    const { inside, hub, hubR, rays } = GEO;
+    const pts = [{ x: hub.x, y: hub.y, u: gridUnit(0) / K, rot: 0 }];
+    const s0 = hubR * 0.85;
+    const lens = rays.map((r) => r.len - 0.2 - s0);
+    const counts = apportion(lens, 2 ** FINAL_GEN - 1);
+    rays.forEach((ray, i) => {
+      const step = lens[i] / counts[i], n = { x: -ray.dir.y, y: ray.dir.x };
+      const rot = Math.atan2(ray.dir.x, -ray.dir.y);
+      for (let j = 0; j < counts[i]; j++) {
+        const s = s0 + (j + 0.5) * step;
+        const cs = crossSection(inside, hub.x + ray.dir.x * s, hub.y + ray.dir.y * s, n);
+        pts.push({ x: cs.x, y: cs.y, u: Math.min((cs.w * 1.3) / 16, (step * 0.98) / 10), rot });
+      }
+    });
+    return pts.map((p, i) => {
+      const x = CX + (p.x - 12) * K, y = CY + (p.y - 12) * K;
+      return { x, y, u: p.u * K, rot: p.rot, id: 7000 + i,
+        rho: Math.hypot(x - HUB_X, y - HUB_Y), phi: Math.atan2(y - HUB_Y, x - HUB_X) };
+    });
+  }
+
+  // Match the 64 grid Clawds to spark slots with minimal total travel; inner
+  // slots take off first so the spark fills from the middle out.
+  function buildFlights() {
+    const targets = buildTargets(), u = gridUnit(FINAL_GEN), grid = [];
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) grid.push({ c, r, ...gridPos(FINAL_GEN, c, r) });
+    const match = hungarian(grid.map((p) => targets.map((q) => (p.x - q.x) ** 2 + (p.y - q.y) ** 2)));
+    const flights = grid.map((p, i) => {
+      const T = targets[match[i]];
+      const t0 = T_FLY + STAGGER * clamp(T.rho / RHO_MAX);
+      FLY_START[p.r * 8 + p.c] = t0;
+      return { ...p, u, t0, T, rho: Math.hypot(p.x - HUB_X, p.y - HUB_Y), phi: Math.atan2(p.y - HUB_Y, p.x - HUB_X) };
+    });
+    // Outer Clawds stand on the heads of inner ones; the big hub Clawd goes on top.
+    return flights.sort((a, b) => (a.T.rho || Infinity) - (b.T.rho || Infinity));
+  }
+  const FLIGHTS = buildFlights();
+
+  const mergeFront = (t) => easeInOutSine(clamp((t - T_MERGE) / MERGE_DUR)) * (RHO_MAX + MERGE_BAND);
+
+  function drawFlyer(ctx, t, f, q, front) {
+    const T = f.T;
+    let x, y, u, rot, sx = 1, sy = 1, leg = 0, blink = 0;
+    if (q < 1) {
+      // Crouch, then spiral in: interpolate in polar coordinates around the hub with a swirl.
+      const e = easeInOutCubic(q), arc = Math.sin(Math.PI * q);
+      const crouch = Math.sin(Math.PI * clamp(q / 0.14));
+      const rho = lerp(f.rho, T.rho, e) + arc * 28;
+      const phi = f.phi + angDiff(f.phi, T.phi) * e + arc * 0.4;
+      u = lerp(f.u, T.u, e);
+      sx = 1 + 0.25 * crouch - 0.08 * arc;
+      sy = 1 - 0.2 * crouch + 0.14 * arc;
+      x = HUB_X + Math.cos(phi) * rho;
+      y = HUB_Y + Math.sin(phi) * rho + u * crouch;
+      rot = T.rot * e;
+      leg = Math.floor(t * 10) % 2;
+      blink = crouch > 0.6 ? 1 : 0;
+    } else {
+      x = T.x; y = T.y; u = T.u; rot = T.rot;
+      blink = idleState(t, T.id).blink;
+      const tau = (t - T_WAVE - (0.35 * T.rho) / RHO_MAX) / 0.32;
+      if (tau > 0 && tau < 1) {
+        const h = Math.sin(Math.PI * tau);
+        x += Math.sin(rot) * h * 3.5 * u;
+        y -= Math.cos(rot) * h * 3.5 * u;
+        sy = 1 + 0.12 * h;
+        sx = 1 - 0.06 * h;
+        leg = 1;
+      }
+    }
+    // The merge front: eyes close just before it reaches the Clawd's far edge,
+    // then the Clawd melts into the spark.
+    const reach = T.rho + 6 * T.u;
+    if (front > 0 && front + 22 > reach) blink = 1;
+    const a = clamp((front - reach) / MERGE_BAND);
+    drawClawd(ctx, x, y, u * (1 + 0.3 * a), { rot, sx, sy, leg, blink, alpha: 1 - a });
+  }
+
+  function drawSwarm(ctx, t) {
+    const front = mergeFront(t);
+    if (front > 0) drawSparkReveal(ctx, front);
+    for (const f of FLIGHTS) {
+      if (t <= f.t0) drawGridClawd(ctx, t, FINAL_GEN, f.c, f.r);
+      else drawFlyer(ctx, t, f, clamp((t - f.t0) / FLIGHT), front);
+    }
+  }
+
+  // ───────────────────────── The spark ─────────────────────────
+
+  function sparkTransform(ctx, s, rot, x, y) {
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    ctx.scale(K * s, K * s);
+    ctx.translate(-GEO.hub.x, -GEO.hub.y);
+  }
+
+  function drawSparkReveal(ctx, front) {
+    const base = ctx.getTransform();
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(HUB_X, HUB_Y, front, 0, TAU);
+    ctx.clip();
+    sparkTransform(ctx, 1, 0, HUB_X, HUB_Y);
+    ctx.fillStyle = PAL.clawd;
+    ctx.fill(SPARK);
+    ctx.clip(SPARK);
+    ctx.setTransform(base);
+    // Shine riding the front, faded in once it clears the hub.
+    ctx.strokeStyle = `rgba(255, 255, 255, ${0.45 * clamp((front - 50) / 70)})`;
+    ctx.lineWidth = 16;
+    ctx.beginPath();
+    ctx.arc(HUB_X, HUB_Y, Math.max(0, front - 10), 0, TAU);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawSpark(ctx, t) {
+    const tau = t - T_MERGE_END;
+    let s = 1 + 0.04 * Math.sin(Math.PI * clamp(tau / 0.45)) + 0.012 * Math.sin((TAU * tau) / 1.3);
+    let rot = 0.1 * easeInOutSine(clamp(tau / (T_COLLAPSE - T_MERGE_END)));
+    let x = HUB_X, y = HUB_Y;
+    if (t > T_COLLAPSE) {
+      // Spin down into the centre, where the loop's first Clawd pops out again.
+      const c = clamp((t - T_COLLAPSE) / (TOTAL - T_COLLAPSE)), m = easeInOutSine(c);
+      s *= 1 - easeInBack(c, 1.2);
+      rot += 2.4 * easeInCubic(c);
+      x = lerp(HUB_X, CX, m);
+      y = lerp(HUB_Y, CY, m);
+    }
+    if (s <= 0.001) return;
+    ctx.save();
+    sparkTransform(ctx, s, rot, x, y);
+    ctx.fillStyle = PAL.clawd;
+    ctx.fill(SPARK);
+    ctx.restore();
+  }
+
+  // ───────────────────────── Sparkles ─────────────────────────
+
+  const BURSTS = [{ t: 0.1, x: CX, y: CY, n: 8, speed: 95, life: 0.55, size: 4, seed: 11 }];
+  SPLITS.forEach((S, g) => {
+    const { cols, rows } = gridOf(g), u0 = gridUnit(g);
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const P = gridPos(g, c, r);
+      BURSTS.push({ t: splitStart(g, c, r) + ANT * (S.d - JITTER), x: P.x, y: P.y, n: 5,
+        speed: 18 + 6 * u0, life: 0.42, size: 1 + 0.35 * u0, seed: cid(g, c, r) });
+    }
+  });
+  for (const f of FLIGHTS) {
+    BURSTS.push({ t: f.t0 + FLIGHT - 0.03, x: f.T.x, y: f.T.y, n: 4, speed: 16, life: 0.35, size: 1.5, seed: f.T.id });
+  }
+  RAY_TIPS.forEach((p, i) => {
+    BURSTS.push({ t: T_MERGE_END - 0.12, x: p.x, y: p.y, n: 5, speed: 38, life: 0.6, size: 3, seed: 2000 + i });
+  });
+
+  function drawSparkles(ctx, t) {
+    ctx.fillStyle = PAL.clawd;
+    for (const b of BURSTS) {
+      const tau = t - b.t;
+      if (tau < 0 || tau >= b.life) continue;
+      const k = tau / b.life, travel = easeOutCubic(k), s = b.size * (1 - 0.7 * k);
+      ctx.globalAlpha = 1 - k * k;
+      ctx.beginPath();
+      for (let j = 0; j < b.n; j++) {
+        const r1 = hash01(b.seed * 31 + j * 7), r2 = hash01(b.seed * 31 + j * 7 + 3);
+        const ang = ((j + r1 * 0.8) / b.n) * TAU + b.seed;
+        const d = b.speed * (0.6 + 0.6 * r2) * travel;
+        const x = b.x + Math.cos(ang) * d, y = b.y + Math.sin(ang) * d;
+        ctx.rect(x - s / 2, y - 1.5 * s, s, 3 * s);
+        ctx.rect(x - 1.5 * s, y - s / 2, 3 * s, s);
+      }
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ───────────────────────── Pixel caption ─────────────────────────
+
+  const GLYPHS = {
+    C: ['.###.', '#...#', '#....', '#....', '#....', '#...#', '.###.'],
+    L: ['#....', '#....', '#....', '#....', '#....', '#....', '#####'],
+    A: ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+    W: ['#...#', '#...#', '#...#', '#.#.#', '#.#.#', '##.##', '#...#'],
+    D: ['####.', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'],
+    U: ['#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+    E: ['#####', '#....', '#....', '####.', '#....', '#....', '#####'],
+    x: ['.....', '.....', '#...#', '.#.#.', '..#..', '.#.#.', '#...#'],  // ×
+    0: ['.###.', '#...#', '#..##', '#.#.#', '##..#', '#...#', '.###.'],
+    1: ['..#..', '.##..', '..#..', '..#..', '..#..', '..#..', '.###.'],
+    2: ['.###.', '#...#', '....#', '...#.', '..#..', '.#...', '#####'],
+    3: ['.###.', '#...#', '....#', '..##.', '....#', '#...#', '.###.'],
+    4: ['...#.', '..##.', '.#.#.', '#..#.', '#####', '...#.', '...#.'],
+    5: ['#####', '#....', '####.', '....#', '....#', '#...#', '.###.'],
+    6: ['..##.', '.#...', '#....', '####.', '#...#', '#...#', '.###.'],
+    7: ['#####', '....#', '...#.', '..#..', '.#...', '.#...', '.#...'],
+    8: ['.###.', '#...#', '#...#', '.###.', '#...#', '#...#', '.###.'],
+    9: ['.###.', '#...#', '#...#', '.####', '....#', '...#.', '.##..'],
+  };
+
+  function captionAt(t) {
+    if (t >= T_MERGE_END - 0.1) return { parts: [['CLAUDE', 'fg']], since: T_MERGE_END - 0.1 };
+    let n = 1, since = 0;
+    SPLITS.forEach((S, i) => { if (t >= S.t + 0.2) { n = 2 << i; since = S.t + 0.2; } });
+    return { parts: [['CLAWD ', 'fg'], ['x' + n, 'clawd']], since };
+  }
+
+  function drawCaption(ctx, t) {
+    const { parts, since } = captionAt(t);
+    let alpha = clamp(t / 0.3);
+    if (t > T_COLLAPSE) alpha = 1 - clamp((t - T_COLLAPSE) / 0.35);
+    if (alpha <= 0) return;
+    const ps = 3 * (1 + 0.3 * (1 - easeOutCubic(clamp((t - since) / 0.28))));
+    const chars = parts.reduce((n, [s]) => n + s.length, 0);
+    let x = CX - ((chars * 6 - 1) * ps) / 2;
+    const y = H - 30 - 3.5 * ps;
+    ctx.globalAlpha = alpha;
+    for (const [str, color] of parts) {
+      ctx.fillStyle = PAL[color];
+      ctx.beginPath();
+      for (const ch of str) {
+        const glyph = GLYPHS[ch];
+        if (glyph) {
+          glyph.forEach((row, gy) => {
+            for (let gx = 0; gx < 5; gx++) if (row[gx] === '#') ctx.rect(x + gx * ps, y + gy * ps, ps, ps);
+          });
+        }
+        x += 6 * ps;
+      }
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ───────────────────────── Frame ─────────────────────────
+
+  function render(ctx, t) {
+    t = ((t % TOTAL) + TOTAL) % TOTAL;
+    ctx.fillStyle = PAL.bg;
+    ctx.fillRect(0, 0, W, H);
+    if (t < T_FLY) drawGridPhase(ctx, t);
+    else if (t < T_MERGE_END) drawSwarm(ctx, t);
+    else drawSpark(ctx, t);
+    drawSparkles(ctx, t);
+    drawCaption(ctx, t);
+  }
+
+  // ───────────────────────── GIF encoder ─────────────────────────
+
+  const LZW_CODES = new Int16Array(1 << 20), LZW_STAMP = new Int32Array(1 << 20);
+  let lzwEpoch = 0;
+
+  function lzw(indices) {
+    const out = new Uint8Array(Math.ceil(indices.length * 1.6) + 16);
+    let o = 0, cur = 0, bits = 0, size = 9, next = 258;
+    const emit = (code) => {
+      cur |= code << bits;
+      bits += size;
+      while (bits >= 8) { out[o++] = cur & 255; cur >>>= 8; bits -= 8; }
+    };
+    emit(256);
+    lzwEpoch++;
+    let prefix = indices[0];
+    for (let i = 1; i < indices.length; i++) {
+      const k = indices[i], key = (prefix << 8) | k;
+      if (LZW_STAMP[key] === lzwEpoch) { prefix = LZW_CODES[key]; continue; }
+      emit(prefix);
+      if (next === 4096) {
+        emit(256);
+        size = 9; next = 258; lzwEpoch++;
+      } else {
+        if (next >= 1 << size) size++;
+        LZW_STAMP[key] = lzwEpoch;
+        LZW_CODES[key] = next++;
+      }
+      prefix = k;
+    }
+    emit(prefix);
+    emit(257);
+    if (bits > 0) out[o++] = cur & 255;
+    return out.subarray(0, o);
+  }
+
+  class GifWriter {
+    constructor(w, h, palette) {
+      this.parts = [];
+      const gct = new Uint8Array(768);
+      palette.forEach(([r, g, b], i) => gct.set([r, g, b], i * 3));
+      this.bytes([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]);  // GIF89a
+      this.u16(w); this.u16(h);
+      this.bytes([0xf7, 0, 0]);                          // 256-colour global table
+      this.parts.push(gct);
+      this.bytes([0x21, 0xff, 0x0b, ...'NETSCAPE2.0'].map((c) => (typeof c === 'string' ? c.charCodeAt(0) : c)));
+      this.bytes([0x03, 0x01, 0, 0, 0]);                 // loop forever
+    }
+    bytes(a) { this.parts.push(Uint8Array.from(a)); }
+    u16(v) { this.bytes([v & 255, (v >> 8) & 255]); }
+    frame({ x, y, w, h, indices, delay }) {
+      this.bytes([0x21, 0xf9, 0x04, 0x04, delay & 255, (delay >> 8) & 255, 0, 0]);  // keep previous frame
+      this.bytes([0x2c]);
+      this.u16(x); this.u16(y); this.u16(w); this.u16(h);
+      this.bytes([0, 8]);
+      const data = lzw(indices);
+      for (let i = 0; i < data.length; i += 255) {
+        const n = Math.min(255, data.length - i);
+        this.bytes([n]);
+        this.parts.push(data.slice(i, i + n));
+      }
+      this.bytes([0]);
+    }
+    finish() { this.bytes([0x3b]); return new Blob(this.parts, { type: 'image/gif' }); }
+  }
+
+  const hexToRgb = (h) => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+
+  // The art only ever blends a handful of flat colours, so a palette of
+  // gradients between every pair of them represents each frame closely.
+  function buildPalette() {
+    const keys = [...new Set([PAL.bg, PAL.clawd, PAL.eye, PAL.fg, '#FFFFFF'].map((c) => c.toUpperCase()))].map(hexToRgb);
+    const pal = keys.map((c) => c.slice());
+    const pairs = (keys.length * (keys.length - 1)) / 2;
+    const steps = Math.floor((256 - keys.length) / pairs) + 1;
+    for (let i = 0; i < keys.length; i++) for (let j = i + 1; j < keys.length; j++) {
+      for (let s = 1; s < steps; s++) pal.push(keys[i].map((v, c) => Math.round(lerp(v, keys[j][c], s / steps))));
+    }
+    return pal.slice(0, 256);
+  }
+
+  async function exportGif({ fps = 25, size = W, onProgress } = {}) {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = size;
+    const g = cv.getContext('2d', { willReadFrequently: true });
+    const pal = buildPalette(), cache = new Map();
+    const nearest = (r, gr, b) => {
+      const key = (r << 16) | (gr << 8) | b;
+      let v = cache.get(key);
+      if (v === undefined) {
+        let bd = Infinity;
+        for (let i = 0; i < pal.length; i++) {
+          const p = pal[i], dr = r - p[0], dg = gr - p[1], db = b - p[2];
+          const d = 2 * dr * dr + 4 * dg * dg + 3 * db * db;
+          if (d < bd) { bd = d; v = i; }
+        }
+        cache.set(key, v);
+      }
+      return v;
+    };
+    const gif = new GifWriter(size, size, pal);
+    const frames = Math.round(TOTAL * fps), delay = Math.round(100 / fps);
+    let prev = null, pending = null;
+    for (let i = 0; i < frames; i++) {
+      g.setTransform(size / W, 0, 0, size / H, 0, 0);
+      render(g, i / fps);
+      const px = g.getImageData(0, 0, size, size).data, idx = new Uint8Array(size * size);
+      for (let p = 0, j = 0; p < idx.length; p++, j += 4) idx[p] = nearest(px[j], px[j + 1], px[j + 2]);
+      // Only store the rectangle that changed since the previous frame.
+      let x0 = 0, y0 = 0, x1 = size - 1, y1 = size - 1;
+      if (prev) {
+        x0 = size; y0 = size; x1 = -1; y1 = -1;
+        for (let y = 0; y < size; y++) {
+          const row = y * size;
+          for (let x = 0; x < size; x++) {
+            if (idx[row + x] !== prev[row + x]) {
+              if (x < x0) x0 = x;
+              if (x > x1) x1 = x;
+              if (y < y0) y0 = y;
+              y1 = y;
+            }
+          }
+        }
+      }
+      if (x1 < 0) {
+        pending.delay += delay;
+      } else {
+        if (pending) gif.frame(pending);
+        const w = x1 - x0 + 1, h = y1 - y0 + 1, sub = new Uint8Array(w * h);
+        for (let y = 0; y < h; y++) sub.set(idx.subarray((y0 + y) * size + x0, (y0 + y) * size + x0 + w), y * w);
+        pending = { x: x0, y: y0, w, h, indices: sub, delay };
+      }
+      prev = idx;
+      if (i % 6 === 0) {
+        onProgress?.(i / frames);
+        await new Promise((r) => setTimeout(r));
+      }
+    }
+    gif.frame(pending);
+    onProgress?.(1);
+    return gif.finish();
+  }
+
+  // ───────────────────────── Page wiring ─────────────────────────
+
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const scrub = document.getElementById('scrub');
+  const timeEl = document.getElementById('time');
+  const toggleBtn = document.getElementById('toggle');
+  const gifBtn = document.getElementById('gif');
+
+  readPalette();
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let time = reduceMotion ? T_MERGE_END + 0.6 : 0;
+  let playing = !reduceMotion, speed = 1, last = performance.now(), dirty = true;
+
+  function fitCanvas() {
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const px = Math.max(1, Math.round(canvas.getBoundingClientRect().width * dpr));
+    if (canvas.width !== px) { canvas.width = canvas.height = px; dirty = true; }
+  }
+  new ResizeObserver(fitCanvas).observe(canvas);
+  fitCanvas();
+
+  function setPlaying(v) {
+    playing = v;
+    document.getElementById('icon-pause').toggleAttribute('hidden', !v);
+    document.getElementById('icon-play').toggleAttribute('hidden', v);
+    toggleBtn.setAttribute('aria-label', v ? '暂停' : '播放');
+    last = performance.now();
+  }
+  setPlaying(playing);
+
+  function tick(now) {
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    if (playing) { time = (time + dt * speed) % TOTAL; dirty = true; }
+    if (dirty) {
+      const s = canvas.width / W;
+      ctx.setTransform(s, 0, 0, s, 0, 0);
+      render(ctx, time);
+      scrub.value = time / TOTAL;
+      timeEl.textContent = `${time.toFixed(2)} s`;
+      dirty = false;
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  toggleBtn.addEventListener('click', () => setPlaying(!playing));
+  scrub.addEventListener('input', () => { setPlaying(false); time = scrub.value * TOTAL; dirty = true; });
+  document.querySelectorAll('[data-speed]').forEach((b) => b.addEventListener('click', () => {
+    speed = +b.dataset.speed;
+    document.querySelectorAll('[data-speed]').forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
+  }));
+  document.getElementById('theme').addEventListener('click', () => {
+    const root = document.documentElement;
+    const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    root.dataset.theme = dark ? 'light' : 'dark';
+    readPalette();
+    dirty = true;
+  });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readPalette(); dirty = true; });
+  document.addEventListener('keydown', (e) => {
+    if (e.target.closest('input, button, select')) return;
+    if (e.code === 'Space') { e.preventDefault(); setPlaying(!playing); }
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      setPlaying(false);
+      time = (time + (e.key === 'ArrowRight' ? 0.04 : -0.04) + TOTAL) % TOTAL;
+      dirty = true;
+    }
+  });
+
+  gifBtn.addEventListener('click', async () => {
+    gifBtn.disabled = true;
+    try {
+      const blob = await exportGif({ onProgress: (p) => { gifBtn.textContent = `导出中 ${Math.round(p * 100)}%`; } });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'clawd-to-claude.gif';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    } finally {
+      gifBtn.disabled = false;
+      gifBtn.textContent = '导出 GIF';
+    }
+  });
+
+  window.ClawdAnim = {
+    TOTAL, W, H, render, exportGif,
+    seek(t) { setPlaying(false); time = t; dirty = true; },
+  };
+})();
+</script>
+</body>
+</html>
