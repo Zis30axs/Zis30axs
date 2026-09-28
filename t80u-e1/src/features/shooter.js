@@ -117,7 +117,9 @@ export class Shooter {
     marker.position.copy(e.point).addScaledVector(e.normal, 0.006);
     marker.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), e.normal);
     shot.add(marker);
-    if (e.object && !e.object.isInstancedMesh) e.object.attach(marker);
+    // 反应装甲块起爆后会被隐藏，所以标记挂到它的父级上
+    const host = e.object?.userData.era ? e.object.parent : e.object;
+    if (host && !host.isInstancedMesh) host.attach(marker);
     shot.userData.marker = marker;
 
     // 车内路径 / 跳弹方向
@@ -167,10 +169,22 @@ export class Shooter {
     const m = shot.userData.marker;
     if (m?.parent) m.parent.remove(m);
     shot.parent?.remove(shot);
+    for (const o of [shot, m]) {
+      o?.traverse((x) => {
+        x.geometry?.dispose();
+        if (x.isMesh && x.material && !Object.values(this.lineMats).includes(x.material)) x.material.dispose();
+      });
+    }
   }
 
   clear() {
     for (const s of this.shots) this.removeShot(s);
     this.shots = [];
+  }
+
+  /** 离开分析类模式时隐藏弹道线与弹着点 */
+  setVisible(v) {
+    this.group.visible = v;
+    for (const s of this.shots) if (s.userData.marker) s.userData.marker.visible = v;
   }
 }

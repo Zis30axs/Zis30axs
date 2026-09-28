@@ -1,7 +1,7 @@
 // 弹道与终点效应计算：沿射线穿过各装甲分区，计算入射角、视线厚度、等效厚度、
 // 反应装甲与间隙效应、跳弹概率，击穿后生成破片锥并判定模块损伤。
 import * as THREE from 'three';
-import { ZONES, ARMOR_MATERIALS, zoneNormalEq } from '../data/armor.js';
+import { ZONES, ARMOR_MATERIALS } from '../data/armor.js';
 import { penAt, ricochetChance } from '../data/ammo.js';
 import { findModule } from '../tank/registry.js';
 

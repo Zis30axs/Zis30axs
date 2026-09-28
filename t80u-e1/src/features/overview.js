@@ -36,6 +36,7 @@ export class OverviewMode {
   enter() {
     const app = this.app;
     app.labels.setOpacity(0);
+    app.damage.ensureIntact();
     app.xray.set(this.xray ? 'ghost' : 'off');
     if (this.first) {
       app.camera.position.copy(app.fitPos(HOME_VIEW.pos, HOME_VIEW.target));

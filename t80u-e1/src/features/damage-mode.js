@@ -32,6 +32,7 @@ export class DamageMode {
     app.xray.applyModuleColors(app.damage.states());
     app.flyTo(DAMAGE_VIEW.pos, DAMAGE_VIEW.target);
     app.hud.innerHTML = reticleHtml();
+    app.shooter.setVisible(true);
     this.render();
     this.off = app.damage.onChange(() => this.refresh());
     this.helper.material.color.set(app.themeColors.accent);
@@ -39,6 +40,7 @@ export class DamageMode {
 
   exit() {
     this.off?.();
+    this.app.shooter.setVisible(false);
     this.helper.visible = false;
     this.app.xray.setGhostOpacity(0.14);
     this.app.xray.set('off');

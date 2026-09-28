@@ -1,6 +1,5 @@
 // 车内布置：乘员、油箱弹架、燃气轮机、传动、油箱、辅助动力装置、电子设备与附加弹药。
 import * as THREE from 'three';
-import { HULL as H } from './dims.js';
 import { merge, place, cylX, cylZ, profileExtrude, RoundedBoxGeometry } from './geom.js';
 import { mk, group } from './registry.js';
 import { staticRound } from './ammo-models.js';
@@ -177,9 +176,9 @@ export function buildInternals(hull, turretYaw, turret, reg, M) {
     const a = (i / 12) * Math.PI * 2;
     engParts.push(place(cylX(0.05, 0.05, 0.4, 10), { pos: [-2.2, ec + Math.cos(a) * 0.34, Math.sin(a) * 0.34] }));
   }
-  const engine = mk(eng, merge(engParts), M.engine);
+  mk(eng, merge(engParts), M.engine);
   // 排气管道（通向车尾百叶窗）
-  const exhaustDuct = mk(eng, new THREE.BoxGeometry(0.5, 0.3, 1.0), M.engineHot, { pos: [-3.15, 1.2, 0] });
+  mk(eng, new THREE.BoxGeometry(0.5, 0.3, 1.0), M.engineHot, { pos: [-3.15, 1.2, 0] });
   mk(eng, new THREE.TorusGeometry(0.22, 0.03, 8, 20, Math.PI), M.steel, { pos: [-1.95, ec + 0.2, 0.3], rot: [0, Math.PI / 2, 0] });
   reg.module('engine', eng);
   reg.explodeGroup(engineG, {

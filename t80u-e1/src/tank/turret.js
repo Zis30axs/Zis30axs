@@ -44,7 +44,7 @@ export function turretZoneOf(cen, nrm) {
   if (nrm.y > 0.8) return 'turret_roof';
   const phi = (Math.atan2(cen.z, cen.x) * 180) / Math.PI;
   const a = Math.abs(phi);
-  if (a < 14) return 'turret_front_center';
+  if (a < 10) return 'turret_front_center';
   if (a < 58) return 'turret_cheek';
   if (a < 105) return 'turret_side_front';
   if (a < 150) return 'turret_side_rear';

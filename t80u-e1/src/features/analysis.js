@@ -24,11 +24,13 @@ export class AnalysisMode {
     if (this.heatOn) this.heat.enable();
     app.flyTo(ANALYSIS_VIEW.pos, ANALYSIS_VIEW.target);
     app.hud.innerHTML = reticleHtml();
+    app.shooter.setVisible(true);
     this.render();
   }
 
   exit() {
     this.heat.disable();
+    this.app.shooter.setVisible(false);
     hideHover(this.app.hud);
   }
 

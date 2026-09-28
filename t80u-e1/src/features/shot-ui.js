@@ -94,11 +94,10 @@ export function updateHover(app, hudRoot, e, res) {
   }
   const e0 = res.entry;
   const zoneName = e0.zone ? zoneLabel(e0.zone, e0.point, app.tank) : app.tank.reg.modules.get(e0.module)?.name || '—';
-  const resist = res.ammo.kind === 'he' ? res.resist : res.resist;
   tip.innerHTML = `
     <div class="ht-zone"></div>
     <div class="ht-row"><span>入射角</span><b>${e0.angle.toFixed(1)}°</b></div>
-    <div class="ht-row"><span>等效防护</span><b>${f0(resist)} mm</b></div>
+    <div class="ht-row"><span>等效防护</span><b>${f0(res.resist)} mm</b></div>
     <div class="ht-row"><span>穿深</span><b>${f0(res.pen0)} mm</b></div>
     <div class="ht-row"><span>判定</span><b style="color:${colors[v.key]}">${v.text}</b></div>`;
   tip.querySelector('.ht-zone').textContent = zoneName;
@@ -125,7 +124,6 @@ export function resultHtml(app, res, summary) {
   }
   const out = OUTCOME[res.outcome] || OUTCOME.miss;
   const e = res.entry;
-  const zoneName = e?.zone ? zoneLabel(e.zone, e.point, app.tank) : e?.module ? app.tank.reg.modules.get(e.module)?.name : '—';
   let sub = '';
   if (res.outcome === 'penetrated' || res.outcome === 'overpen') sub = `剩余穿深 ${f0(res.penAtBoundary)} mm`;
   else if (res.outcome === 'stopped') sub = `还差 ${f0(res.resist - res.pen0)} mm`;
@@ -149,7 +147,9 @@ export function resultHtml(app, res, summary) {
         .slice(0, 12)
         .map((ev) => {
           const st = ev.kind === 'crew' ? crewStateText(ev.after) : STATE_TEXT[ev.after];
-          return `<div class="hit"><span>${ev.name}<span class="note"> · ${ev.source === 'main' ? '弹体直接命中' : ev.source === 'spall' ? '破片' : ev.source === 'blast' ? '冲击波' : '殉爆'} −${f0(ev.dmg)}</span></span><span class="st st-${ev.after}">${st}</span></div>`;
+          const src = { main: '弹体直接命中', spall: '破片', blast: '冲击波', detonation: '殉爆' }[ev.source] || '破片';
+          const dmg = ev.source === 'detonation' ? '' : ` −${f0(ev.dmg)}`;
+          return `<div class="hit"><span>${ev.name}<span class="note"> · ${src}${dmg}</span></span><span class="st st-${ev.after}">${st}</span></div>`;
         })
         .join('')}</div>`
     : `<p class="note">${res.outcome === 'stopped' || res.outcome === 'ricochet' ? '未造成车内损伤。' : '没有模块受损。'}</p>`;

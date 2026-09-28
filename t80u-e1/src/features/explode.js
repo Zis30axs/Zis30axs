@@ -70,6 +70,7 @@ export class ExplodeMode {
   }
 
   exit() {
+    this.app.labels.container.classList.remove('has-active');
     this.app.labels.setOpacity(0);
     this.app.labels.clear();
     this.boxHelper.visible = false;
@@ -158,6 +159,7 @@ export class ExplodeMode {
   select(id, focus = false) {
     this.selected = id;
     this.app.labels.setActive(id);
+    this.app.labels.container.classList.toggle('has-active', !!id);
     this.renderInfo();
     const g = this.ctrl.byId.get(id);
     this.boxHelper.visible = !!g;
@@ -166,7 +168,7 @@ export class ExplodeMode {
       this.box.setFromObject(g.obj).getCenter(c);
       const dir = this.app.camera.position.clone().sub(this.app.controls.target).normalize();
       const size = this.box.getSize(new THREE.Vector3()).length();
-      const dist = THREE.MathUtils.clamp(size * 2.2, 4, 14);
+      const dist = THREE.MathUtils.clamp(size * 3.2, 6, 16);
       this.app.flyTo(c.clone().addScaledVector(dir, dist).toArray(), c.toArray(), 0.9);
     }
   }

@@ -79,9 +79,10 @@ export class XRay {
   /** 模块着色：modules 模式下按状态着色，否则恢复原材质 */
   applyModuleColors(states) {
     if (states) this.lastStates = states;
-    const colorize = this.mode === 'modules';
     for (const [id, mod] of this.tank.reg.modules) {
       const st = this.lastStates?.[id] ?? 'ok';
+      // 完好的外部模块（履带、身管、观瞄等）保持半透明外观，受损后才着色
+      const colorize = this.mode === 'modules' && !(mod.external && st === 'ok');
       for (const root of mod.roots) {
         root.traverse((o) => {
           if (!o.isMesh) return;

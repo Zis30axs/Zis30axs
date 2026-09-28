@@ -266,7 +266,11 @@ export class App {
     this.hud.innerHTML = '';
     this.panelBody.scrollTop = 0;
     this.mode.enter(prev);
-    if (location.hash.slice(1) !== name) history.replaceState(null, '', '#' + name);
+    try {
+      if (location.hash.slice(1) !== name) history.replaceState(null, '', '#' + name);
+    } catch {
+      /* 某些嵌入环境不允许修改地址 */
+    }
     requestAnimationFrame(() => this.onResize());
   }
 

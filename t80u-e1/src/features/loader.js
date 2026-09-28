@@ -17,8 +17,6 @@ const CAM = {
 // 各镜头对应的外壳透明度（外部动作看外观，内部机构看透视）
 const SHELL = { carousel: 0.07, breech: 0.07, gunSide: 1, muzzle: 1 };
 
-const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
-
 class Sequence {
   constructor(steps) {
     let t = 0;
@@ -58,10 +56,10 @@ export class LoaderMode {
 
   // ———————————————————— 3D 辅助 ————————————————————
   buildLaser() {
-    const geo = new THREE.CylinderGeometry(0.008, 0.008, 1, 6, 1, true);
+    const geo = new THREE.CylinderGeometry(0.0035, 0.0035, 1, 6, 1, true);
     geo.rotateZ(-Math.PI / 2);
     geo.translate(0.5, 0, 0);
-    this.laserMat = new THREE.MeshBasicMaterial({ color: 0xff3b2f, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false });
+    this.laserMat = new THREE.MeshBasicMaterial({ color: 0xff3b2f, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false });
     this.laser = new THREE.Mesh(geo, this.laserMat);
     this.laser.scale.x = 90;
     this.laser.position.set(0.79, 0.93, -0.6);
@@ -296,7 +294,7 @@ export class LoaderMode {
         apply(k) {
           self.laser.visible = k > 0.12 && k < 0.88;
           self.laser.rotation.z = start.aim;
-          self.laserMat.opacity = 0.55 + 0.35 * Math.sin(k * 40);
+          self.laserMat.opacity = 0.35 + 0.2 * Math.sin(k * 40);
         },
       },
       {
@@ -338,7 +336,7 @@ export class LoaderMode {
         apply(k) {
           fly.visible = k < 0.995;
           // 前 70% 缓慢移出炮口（便于观察弹托分离），之后加速飞离
-          const slow = isATGM ? 3.2 : 2.4;
+          const slow = isATGM ? 1.7 : 2.4;
           fly.position.x = muzzleX + 0.05 + (k < 0.7 ? (k / 0.7) * slow : slow + Math.pow((k - 0.7) / 0.3, 2) * 40);
           self.laser.visible = isATGM && k < 0.99;
           if (isATGM) {

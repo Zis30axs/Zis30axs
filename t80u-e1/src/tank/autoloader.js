@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { LOADER as L, GUN, DEG } from './dims.js';
 import { AMMO, CAROUSEL_LAYOUT } from '../data/ammo.js';
 import { projectileMesh, chargeMesh, stubMesh, staticRound } from './ammo-models.js';
-import { cylX, cylZ, merge, place } from './geom.js';
+import { cylX, merge, place } from './geom.js';
 import { mk, group } from './registry.js';
 
 const STEP = (Math.PI * 2) / L.slots;

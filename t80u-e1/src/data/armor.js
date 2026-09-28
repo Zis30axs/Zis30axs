@@ -35,7 +35,7 @@ export const ZONES = {
     boundary: true,
     surface: true,
   },
-  turret_front_center: { name: '炮塔正面炮口开口', layers: [['cast', 120]], boundary: true, surface: true },
+  turret_front_center: { name: '炮塔正面（炮口开口周围）', layers: [['cast', 220]], boundary: true, surface: true },
   turret_side_front: { name: '炮塔侧面（前部）', layers: [['cast', 160]], boundary: true, surface: true },
   turret_side_rear: { name: '炮塔侧面（后部）', layers: [['cast', 110]], boundary: true, surface: true },
   turret_rear: { name: '炮塔后部', layers: [['cast', 65]], boundary: true, surface: true },

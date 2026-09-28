@@ -1,6 +1,6 @@
 // 模块损伤模型：耐久、状态、起火、弹药殉爆（炮塔抛飞），以及整车状态评估。
 import * as THREE from 'three';
-import { spallCone, kindKey } from './ballistics.js';
+import { spallCone } from './ballistics.js';
 import { MODULE_CATS } from '../data/modules.js';
 
 const rand = Math.random;
@@ -72,7 +72,6 @@ export class DamageModel {
   applyShot(res) {
     const app = this.app;
     const ammo = res.ammo;
-    const kind = kindKey(ammo);
     const summary = { events: new Map(), frags: [], detonation: false, fires: [], eraDetonated: 0, blast: null };
     const add = (r, source) => {
       if (!r) return;
