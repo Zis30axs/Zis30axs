@@ -30,9 +30,11 @@ export function plateGeometry(pts, outward, t, holes = []) {
     path.absarc(c.x, c.y, h.r, 0, Math.PI * 2, true);
     shape.holes.push(path);
   }
-  const geo = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false, curveSegments: 40 });
+  // 小倒角让板件边缘有高光；倒角内收，保证外表面仍位于给定平面、总厚度不变
+  const b = Math.min(0.01, t * 0.22);
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: t - 2 * b, bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelOffset: -b, bevelSegments: 1, curveSegments: 40 });
   const m = new THREE.Matrix4().makeBasis(U, V, N);
-  m.setPosition(O.clone().addScaledVector(N, -t));
+  m.setPosition(O.clone().addScaledVector(N, -(t - b)));
   geo.applyMatrix4(m);
   geo.computeBoundingSphere();
   return geo;

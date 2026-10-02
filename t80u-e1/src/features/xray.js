@@ -28,7 +28,7 @@ export class XRay {
       seen.add(mesh);
       const z = mesh.userData.zone;
       if (z && ['wheel', 'track', 'barrel', 'smoke', 'fitting'].includes(z)) continue;
-      const geo = new THREE.EdgesGeometry(mesh.geometry, 28);
+      const geo = new THREE.EdgesGeometry(mesh.userData.edgeGeo || mesh.geometry, 28);
       const line = new THREE.LineSegments(geo, this.edgeMat);
       line.raycast = () => {};
       line.visible = false;

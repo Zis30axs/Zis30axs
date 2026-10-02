@@ -6,8 +6,8 @@ export const HULL = {
   belly: 0.45, // 车底离地
   sponsonFloor: 0.98, // 翼子板（悬伸部）底面
   roof: 1.42, // 车体顶甲
-  halfIn: 1.04, // 下车体半宽（两条履带之间）
-  halfOut: 1.62, // 上车体半宽（含翼子板）
+  halfIn: 1.08, // 下车体半宽（两条履带之间）
+  halfOut: 1.7, // 上车体半宽（含翼子板；加侧裙全宽约 3.56 m）
   noseX: 3.45,
   noseY: 0.86,
   ufpSlope: 22 * DEG, // 上装甲板与水平面夹角（即与铅垂线 68°）
@@ -41,7 +41,7 @@ export const GUN = {
 };
 
 export const RUNNING = {
-  trackZ: 1.36, // 履带中心线
+  trackZ: 1.4, // 履带中心线
   trackW: 0.58,
   trackT: 0.07,
   wheelR: 0.335,

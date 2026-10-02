@@ -27,27 +27,42 @@ float snoise(vec3 v){
   return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
 }`;
 
-// 所有涂装材质共享的迷彩参数
+// 所有涂装材质共享的迷彩与风化参数
 export const camoUniforms = {
   uCamoMix: { value: 0 },
   uCamo1: { value: new THREE.Color(0x4f5b35) }, // 4BO 绿
   uCamo2: { value: new THREE.Color(0x8c7b50) }, // 沙黄
   uCamo3: { value: new THREE.Color(0x24251f) }, // 黑
   uWear: { value: 1 },
+  uDirt: { value: 0.55 },
+  uDirtColor: { value: new THREE.Color(0x6e6048) },
 };
 
-function applyPaintShader(mat) {
+/**
+ * 涂装着色器：可切换的三色迷彩、细微的明暗不均、靠近地面的泥土、朝上表面的积尘；
+ * cast = true 时模拟铸钢表面的粗糙起伏（用于铸造炮塔）。
+ */
+function applyPaintShader(mat, { cast = false } = {}) {
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, camoUniforms);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vCamoPos;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCamoPos = position;');
-    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vCamoPos;\nvarying vec3 vWPos;\nvarying float vUpN;')
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+vCamoPos = position;
+vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+vUpN = normalize(mat3(modelMatrix) * objectNormal).y;`,
+      );
+    let frag = shader.fragmentShader
       .replace(
         '#include <common>',
         `#include <common>
 varying vec3 vCamoPos;
+varying vec3 vWPos;
+varying float vUpN;
 uniform float uCamoMix; uniform vec3 uCamo1; uniform vec3 uCamo2; uniform vec3 uCamo3; uniform float uWear;
+uniform float uDirt; uniform vec3 uDirtColor;
 ${NOISE_GLSL}`,
       )
       .replace(
@@ -61,13 +76,37 @@ ${NOISE_GLSL}`,
   camo = mix(camo, uCamo2, smoothstep(0.30, 0.34, n));
   camo = mix(camo, uCamo3, smoothstep(0.38, 0.42, m));
   diffuseColor.rgb = mix(diffuseColor.rgb, camo, uCamoMix);
-  // 细微的风化与明暗不均
+  // 细微的明暗不均
   float w = snoise(q * 6.0) * 0.5 + snoise(q * 22.0) * 0.25;
   diffuseColor.rgb *= 1.0 + w * 0.07 * uWear;
+  // 泥土：越靠近地面越重，带斑驳噪声；朝上的表面积一层薄尘
+  float dn = 0.55 + 0.45 * snoise(vWPos * 2.3 + 4.1);
+  float dirt = (1.0 - smoothstep(0.15, 1.05, vWPos.y)) * dn;
+  dirt += smoothstep(0.75, 1.0, vUpN) * 0.16 * (0.6 + 0.4 * snoise(vWPos * 3.1));
+  diffuseColor.rgb = mix(diffuseColor.rgb, uDirtColor, clamp(dirt * uDirt, 0.0, 0.75));
 }`,
       );
+    if (cast) {
+      frag = frag
+        .replace(
+          '#include <roughnessmap_fragment>',
+          `#include <roughnessmap_fragment>
+roughnessFactor = clamp(roughnessFactor + snoise(vCamoPos * 9.0) * 0.07, 0.0, 1.0);`,
+        )
+        .replace(
+          '#include <normal_fragment_maps>',
+          `#include <normal_fragment_maps>
+{
+  // 铸钢表面的细小起伏
+  vec3 cp = vCamoPos * 24.0;
+  vec3 nb = vec3(snoise(cp), snoise(cp + 11.7), snoise(cp + 23.1)) + 0.5 * vec3(snoise(cp * 2.3 + 5.0), snoise(cp * 2.3 + 17.0), snoise(cp * 2.3 + 31.0));
+  normal = normalize(normal + nb * 0.035);
+}`,
+        );
+    }
+    shader.fragmentShader = frag;
   };
-  mat.customProgramCacheKey = () => 'paint-camo';
+  mat.customProgramCacheKey = () => (cast ? 'paint-cast-v2' : 'paint-v2');
 }
 
 export function createMaterials() {
@@ -75,16 +114,23 @@ export function createMaterials() {
 
   const paint = std({ color: 0x4f5b35, roughness: 0.78, metalness: 0.12 });
   applyPaintShader(paint);
+  const paintCast = std({ color: 0x4f5b35, roughness: 0.84, metalness: 0.1 });
+  applyPaintShader(paintCast, { cast: true });
   const paintDark = std({ color: 0x3c4629, roughness: 0.8, metalness: 0.12 });
   applyPaintShader(paintDark);
   const paintDarkDouble = std({ color: 0x353e25, roughness: 0.85, metalness: 0.1, side: THREE.DoubleSide });
 
   const m = {
     paint,
+    paintCast,
     paintDark,
     paintDarkDouble,
     rubber: std({ color: 0x1f2120, roughness: 0.95, metalness: 0 }),
-    skirt: std({ color: 0x2d302a, roughness: 0.93, metalness: 0, side: THREE.DoubleSide }),
+    skirt: std({ color: 0x2b2e28, roughness: 0.93, metalness: 0, side: THREE.DoubleSide }),
+    cable: std({ color: 0x3a3833, roughness: 0.55, metalness: 0.7 }),
+    redLens: std({ color: 0x8a1a12, roughness: 0.2, metalness: 0.1, emissive: 0x4a0a05, emissiveIntensity: 0.6 }),
+    tarp: std({ color: 0x55573f, roughness: 0.98, metalness: 0 }),
+    strap: std({ color: 0x3e3a2c, roughness: 0.9, metalness: 0 }),
     steel: std({ color: 0x6d6c66, roughness: 0.45, metalness: 0.75 }),
     trackSteel: std({ color: 0x3f3d39, roughness: 0.62, metalness: 0.7 }),
     darkMetal: std({ color: 0x2a2b28, roughness: 0.55, metalness: 0.6 }),
@@ -113,4 +159,4 @@ export function createMaterials() {
 }
 
 // 外部（会在 X 光下变透明）的材质键名
-export const EXTERIOR_KEYS = ['paint', 'paintDark', 'rubber', 'skirt', 'steel', 'trackSteel', 'darkMetal', 'glass', 'lens', 'wood', 'canvas', 'light'];
+export const EXTERIOR_KEYS = ['paint', 'paintCast', 'paintDark', 'rubber', 'skirt', 'steel', 'trackSteel', 'darkMetal', 'glass', 'lens', 'wood', 'canvas', 'light', 'cable', 'redLens', 'tarp', 'strap'];
