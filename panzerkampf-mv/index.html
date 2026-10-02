@@ -3,13 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Panzerkampf · 库尔斯克 1943</title>
+<title>Panzerkampf MV</title>
 <style>
   :root{
     --bg:#07090c; --ink:#e9e4d6; --muted:#9aa3ab; --steel:#8fa3b3;
     --red:#c8281e; --red-hi:#ff5a3c; --brass:#c9a24b; --panel:rgba(10,13,17,.78);
+    color-scheme:dark;
   }
-  *{box-sizing:border-box;margin:0;padding:0}
+  *{box-sizing:border-box;margin:0}
   html,body{height:100%;background:var(--bg);color:var(--ink);overflow:hidden;
     font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei","WenQuanYi Zen Hei",system-ui,sans-serif}
   #stage{height:100%;display:grid;place-items:center}
@@ -176,6 +177,7 @@ function ensureAudio() {
   audioEl = new Audio(); audioEl.preload = 'auto';
   actx.createMediaElementSource(audioEl).connect(master);
   audioEl.addEventListener('ended', onEnded);
+  audioEl.addEventListener('error', () => { P.mode = 'demo'; P.base = 0; toast('无法播放这个音频文件，已切回合成节拍'); });
 }
 
 const env = (g, w, a, d, peak) => {
@@ -725,20 +727,31 @@ function startRecord(from = 0) {
   const stream = new MediaStream([...cv.captureStream(30).getVideoTracks(), ...recDest.stream.getAudioTracks()]);
   rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8e6 }); recChunks = [];
   rec.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data); };
-  rec.onstop = () => {
-    const blob = new Blob(recChunks, { type: 'video/webm' }), a = document.createElement('a');
-    a.href = URL.createObjectURL(blob); a.download = 'panzerkampf-mv.webm'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    rec = null; ui.rec.classList.remove('on'); ui.rec.textContent = '● 录制 WebM'; toast('已导出 panzerkampf-mv.webm');
-    window.__mvLastRecording = blob.size;
+  rec.onstop = async () => {
+    const blob = new Blob(recChunks, { type: 'video/webm' });
+    rec = null; ui.rec.classList.remove('on'); ui.rec.textContent = '● 录制 WebM'; window.__mvLastRecording = blob.size;
+    toast(await saveBlob(blob, 'panzerkampf-mv.webm'));
   };
   ui.rec.classList.add('on'); ui.rec.textContent = '■ 停止并保存'; toast('录制中：从头完整播放一遍，结束后自动下载');
   pause(); seek(from); rec.start(1000); play();
+}
+async function saveBlob(blob, name) {
+  try {                                                      // 托管页面里不允许脚本直接下载，改走平台的“保存文件”确认框
+    const dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null;
+    if (dl) { await dl.save({ filename: name, data: blob }); return '已保存 ' + name; }
+  } catch (e) { return e && e.code === 'declined' ? '已取消保存' : '保存失败：' + ((e && e.message) || e); }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  return '已导出 ' + name;
 }
 function stopRecord() { if (rec && rec.state !== 'inactive') rec.stop(); }
 
 $('goDemo').onclick = () => { P.mode = 'demo'; seek(0); play(); };
 ui.pp.onclick = () => (isPlaying() ? pause() : play());
-$('fs').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : frameEl.requestFullscreen && frameEl.requestFullscreen());
+$('fs').onclick = () => {
+  const r = document.fullscreenElement ? document.exitFullscreen() : frameEl.requestFullscreen && frameEl.requestFullscreen();
+  if (r && r.catch) r.catch(() => toast('当前环境不支持全屏'));
+};
 ui.rec.onclick = () => startRecord();
 $('file').onchange = (e) => { loadFile(e.target.files[0]); e.target.value = ''; };
 ui.seek.oninput = () => seek(ui.seek.value / 1000 * P.duration());
