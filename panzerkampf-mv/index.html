@@ -1,0 +1,779 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Panzerkampf · 库尔斯克 1943</title>
+<style>
+  :root{
+    --bg:#07090c; --ink:#e9e4d6; --muted:#9aa3ab; --steel:#8fa3b3;
+    --red:#c8281e; --red-hi:#ff5a3c; --brass:#c9a24b; --panel:rgba(10,13,17,.78);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:var(--bg);color:var(--ink);overflow:hidden;
+    font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei","WenQuanYi Zen Hei",system-ui,sans-serif}
+  #stage{height:100%;display:grid;place-items:center}
+  #frame{position:relative;width:min(100vw,calc(100vh * 16 / 9));aspect-ratio:16/9;background:#000;overflow:hidden;user-select:none}
+  #frame:fullscreen{width:100vw;height:100vh;aspect-ratio:auto}
+  canvas{display:block;width:100%;height:100%}
+
+  button,.btn{font:inherit;color:var(--ink);background:var(--panel);border:1px solid rgba(233,228,214,.28);
+    border-radius:999px;padding:.45em 1.1em;cursor:pointer;display:inline-flex;align-items:center;gap:.5em;
+    backdrop-filter:blur(6px);transition:background .15s,border-color .15s}
+  button:hover,.btn:hover{background:rgba(40,46,54,.9);border-color:var(--brass)}
+  button:focus-visible,.btn:focus-within,input[type=range]:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+  .primary{background:var(--red);border-color:var(--red-hi)}
+  .primary:hover{background:var(--red-hi)}
+  small{opacity:.75;font-size:.78em}
+
+  #start{position:absolute;left:0;right:0;bottom:0;padding:0 4% 7%;display:flex;flex-direction:column;align-items:center;gap:.9em;
+    background:linear-gradient(to top,rgba(0,0,0,.82),rgba(0,0,0,0));padding-top:12%;font-size:clamp(12px,1.9vw,18px)}
+  #start .btns{display:flex;flex-wrap:wrap;gap:.8em;justify-content:center}
+  #start p{max-width:46em;text-align:center;color:var(--muted);font-size:.85em;line-height:1.6}
+  #frame.started #start{display:none}
+
+  #bar{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;gap:.7em;flex-wrap:wrap;
+    padding:.7em 1.2em;font-size:clamp(11px,1.5vw,14px);background:linear-gradient(to top,rgba(0,0,0,.85),rgba(0,0,0,0));
+    transition:opacity .35s}
+  #frame:not(.started) #bar{display:none}
+  #frame.idle #bar{opacity:0;pointer-events:none}
+  #frame.idle{cursor:none}
+  #bar button,#bar .btn{padding:.35em .9em}
+  #tm,#sync{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
+  #seek{flex:1 1 160px;min-width:120px;accent-color:var(--red-hi)}
+  #rec.on{background:var(--red);border-color:var(--red-hi)}
+  #toast{position:absolute;top:8%;left:50%;transform:translateX(-50%);background:var(--panel);padding:.45em 1.1em;border-radius:999px;
+    font-size:clamp(11px,1.6vw,15px);opacity:0;transition:opacity .25s;pointer-events:none;white-space:nowrap}
+  #toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="frame">
+    <canvas id="c" width="1280" height="720" aria-label="Panzerkampf 音乐 MV 画面"></canvas>
+
+    <div id="start">
+      <div class="btns">
+        <button id="goDemo" class="primary">▶ 开始播放 <small>合成节拍演示</small></button>
+        <label class="btn" for="file">♫ 载入我的 Panzerkampf 音频</label>
+      </div>
+      <p>没有音频文件也能观看（使用原创的简易合成节拍，98 BPM · F♯ 小调）。载入你自己合法获得的 Panzerkampf 音频（mp3 / wav / flac / ogg，也可直接拖进窗口）后，画面会跟随真实低频鼓点律动。</p>
+    </div>
+
+    <div id="bar">
+      <button id="pp" aria-label="播放 / 暂停">▶</button>
+      <span id="tm">0:00 / 0:00</span>
+      <input id="seek" type="range" min="0" max="1000" value="0" aria-label="进度">
+      <span id="sync" title="键盘 [ ] 微调音画同步">同步 +0.0s</span>
+      <label class="btn" for="file">♫ 音频</label>
+      <button id="rec" title="从头播放并录制为 .webm 视频文件">● 录制 WebM</button>
+      <button id="fs" aria-label="全屏">⛶</button>
+    </div>
+    <div id="toast" role="status"></div>
+    <input id="file" type="file" accept="audio/*" hidden>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ───────────────────────── 基础常量 ───────────────────────── */
+const W = 1280, H = 720, TAU = Math.PI * 2;
+const BPM = 98, BEAT = 60 / BPM, BAR = BEAT * 4;           // 98 BPM · 4/4 · F♯ minor
+const BAR_H = 44;                                           // 上下黑边高度
+const FONT_ZH = '"Noto Sans SC","PingFang SC","Microsoft YaHei","WenQuanYi Zen Hei",sans-serif';
+const FONT_EN = 'Oswald,"Bebas Neue",Impact,Haettenschweiler,"Arial Narrow Bold","Arial Narrow",sans-serif';
+const COL = { ink: '#e9e4d6', steel: '#8fa3b3', red: '#c8281e', redHi: '#ff5a3c', brass: '#c9a24b' };
+
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const sm = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const rng = (a) => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+const fmt = (t) => { t = Math.max(0, t); return Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0'); };
+const num = (n) => Math.round(n).toLocaleString('en-US');
+
+/* ─────────────────── 时间线：按 98 BPM 的小节划分段落 ───────────────────
+   段落边界是根据歌曲结构（5:15、98 BPM、4/4）估算的，并未逐帧对齐原曲；
+   若载入真实音频后觉得对不上，用键盘 [ ] 微调整体偏移即可。            */
+const SECTIONS = [
+  { id: 'intro', bars: 8,  tag: 'PRELUDE',      zh: '序章',     scene: 'steppe',  energy: .35, capEnd: 7,
+    cap: [[0.5, '1943 年夏 · 库尔斯克', 'Kursk, summer 1943'], [4, '钢铁洪流正在集结', 'The armour gathers']] },
+  { id: 'v1',    bars: 16, tag: 'VERSE I',      zh: '第一节',   scene: 'map',     energy: .55,
+    cap: [[0, '7 月 5 日 · 德军发动“堡垒行动”', '5 July · Operation Citadel begins'],
+          [4, '南北两路钳形合击库尔斯克突出部', 'Pincers close on the Kursk salient'],
+          [8, '约 77.7 万人 · 2,451 辆坦克与突击炮', '~777,000 men · 2,451 tanks & assault guns'],
+          [12, '成千上万的坦克，列阵待发', 'Thousands of tanks stand in line']] },
+  { id: 'pre1',  bars: 8,  tag: 'PRE-CHORUS',   zh: '布防',     scene: 'mines',   energy: .6,
+    cap: [[0, '苏军构筑纵深防御：6 道防线，纵深 130–150 公里', 'Six defensive belts, 130–150 km deep'],
+          [3.5, '夜幕掩护下，埋设了 94 万余枚地雷', 'Over 943,000 mines laid under cover of night'],
+          [6.5, '静待时机 · 陷阱已经张开', 'Waiting. The trap is set']] },
+  { id: 'ch1',   bars: 16, tag: 'CHORUS',       zh: '副歌',     scene: 'clash',   energy: 1,
+    cap: [[0, 'PANZERKAMPF · 装甲对决', 'Tank battle'],
+          [6, '钢铁撞上钢铁', 'Steel meets steel'],
+          [11, '钢铁洪流撞进了陷阱', 'The armoured tide meets the trap']] },
+  { id: 'v2',    bars: 16, tag: 'VERSE II',     zh: '第二节',   scene: 'prok',    energy: .75,
+    cap: [[0, '7 月 12 日 · 普罗霍罗夫卡', '12 July · Prokhorovka'],
+          [4, '近距离的坦克混战', 'Armour at point-blank range'],
+          [8, '尘土、烟火与燃烧的钢铁', 'Dust, smoke and burning steel'],
+          [12, '战场成了双方的熔炉', 'A furnace for both sides']] },
+  { id: 'pre2',  bars: 8,  tag: 'PRE-CHORUS',   zh: '转折',     scene: 'prok',    energy: .8, cont: true,
+    cap: [[0, '德军的冲击被迫减速', 'The assault slows'],
+          [4, '战局开始向苏军一侧倾斜', 'The tide begins to turn']] },
+  { id: 'ch2',   bars: 16, tag: 'CHORUS',       zh: '副歌',     scene: 'clash',   energy: 1,
+    cap: [[0, 'PANZERKAMPF · 装甲对决', 'Tank battle'],
+          [8, '史上规模最大的坦克战之一', 'One of history’s largest tank battles']] },
+  { id: 'br',    bars: 16, tag: 'BRIDGE · SOLO', zh: '间奏',    scene: 'wreck',   energy: .5,
+    cap: [[0, '硝烟散去，原野上满是残骸', 'The smoke clears over a field of wrecks'],
+          [6, '全战役估计伤亡 · 德军 16.5–20.3 万', 'Est. casualties, whole battle · German 165–203k'],
+          [10, '苏军约 86.3 万', 'Soviet ~863k'],
+          [14, '代价沉重', 'A heavy price']] },
+  { id: 'ch3',   bars: 16, tag: 'FINAL CHORUS', zh: '终章副歌', scene: 'counter', energy: 1,
+    cap: [[0, '苏军转入反攻', 'The Red Army counterattacks'],
+          [4, '库图佐夫行动 · 7 月 12 日', 'Operation Kutuzov · 12 July'],
+          [8, '鲁勉采夫统帅行动 · 8 月 3 日', 'Operation Rumyantsev · 3 August'],
+          [12, '德军被一路逼退', 'The Wehrmacht is driven back']] },
+  { id: 'out',   bars: 9,  tag: 'OUTRO',        zh: '尾声',     scene: 'dawn',    energy: .3, capEnd: 6.4,
+    cap: [[0, '8 月 23 日 · 战役结束', '23 August · The battle ends'],
+          [2.4, '德军在东线最后一次大规模攻势被挡下', 'The last major German offensive in the East is halted'],
+          [4.8, '战争的主动权，从此易手', 'The initiative has changed hands']] },
+];
+let acc = 0;
+for (const s of SECTIONS) { s.start = acc * BAR; acc += s.bars; s.end = acc * BAR; s.len = s.end - s.start; }
+const TOTAL = acc * BAR;                                    // ≈ 315.9 s
+const secAt = (t) => SECTIONS.find((s) => t < s.end) || SECTIONS[SECTIONS.length - 1];
+
+/* ───────────────────────── 全局状态 ───────────────────────── */
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const $ = (id) => document.getElementById(id);
+const frameEl = $('frame');
+
+const S = { t: 0, sec: SECTIONS[0], secIdx: 0, secT: 0, secP: 0, beat: 0, beatPh: 0, bar: 0, kick: 0, snare: 0, bass: 0, energy: .3 };
+const P = {
+  mode: 'demo', playing: false, base: 0, t0: 0, sync: 0, fileName: '',
+  time() {
+    if (this.mode === 'audio') return (audioEl ? audioEl.currentTime : 0) + this.sync;
+    return this.playing ? this.base + (performance.now() - this.t0) / 1000 : this.base;
+  },
+  duration() { return this.mode === 'audio' && audioEl && isFinite(audioEl.duration) ? audioEl.duration + this.sync : TOTAL; },
+};
+
+/* ───────────────────────── 音频：合成节拍 + 真实音频分析 ───────────────────────── */
+let actx = null, master = null, analyser = null, recDest = null, audioEl = null, fft = null, noiseBuf = null;
+
+function ensureAudio() {
+  if (actx) { if (actx.state === 'suspended') actx.resume(); return; }
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+  master = actx.createGain(); master.gain.value = .85;
+  analyser = actx.createAnalyser(); analyser.fftSize = 1024; analyser.smoothingTimeConstant = .5;
+  fft = new Uint8Array(analyser.frequencyBinCount);
+  recDest = actx.createMediaStreamDestination();
+  master.connect(analyser); analyser.connect(actx.destination); master.connect(recDest);
+  noiseBuf = actx.createBuffer(1, actx.sampleRate, actx.sampleRate);
+  const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  audioEl = new Audio(); audioEl.preload = 'auto';
+  actx.createMediaElementSource(audioEl).connect(master);
+  audioEl.addEventListener('ended', onEnded);
+}
+
+const env = (g, w, a, d, peak) => {
+  g.gain.setValueAtTime(0.0001, w); g.gain.exponentialRampToValueAtTime(Math.max(peak, 0.0002), w + a);
+  g.gain.exponentialRampToValueAtTime(0.0001, w + a + d);
+};
+function tone(w, f, dur, type, v, lp) {
+  const o = actx.createOscillator(), g = actx.createGain(); o.type = type; o.frequency.value = f;
+  let node = o; if (lp) { const l = actx.createBiquadFilter(); l.type = 'lowpass'; l.frequency.value = lp; o.connect(l); node = l; }
+  node.connect(g); g.connect(master); env(g, w, Math.min(.02, dur / 4), dur, v); o.start(w); o.stop(w + dur + .05);
+}
+function noise(w, dur, ftype, freq, v) {
+  const n = actx.createBufferSource(); n.buffer = noiseBuf; const f = actx.createBiquadFilter(); f.type = ftype; f.frequency.value = freq;
+  const g = actx.createGain(); n.connect(f); f.connect(g); g.connect(master); env(g, w, .002, dur, v); n.start(w, Math.random() * .5); n.stop(w + dur + .05);
+}
+function kick(w, v) {
+  const o = actx.createOscillator(), g = actx.createGain(); o.type = 'sine';
+  o.frequency.setValueAtTime(140, w); o.frequency.exponentialRampToValueAtTime(42, w + .14);
+  env(g, w, .003, .26, v); o.connect(g); g.connect(master); o.start(w); o.stop(w + .35);
+}
+const snare = (w, v) => { noise(w, .16, 'bandpass', 1900, v); tone(w, 190, .1, 'triangle', v * .5); };
+const hat = (w, v) => noise(w, .05, 'highpass', 7500, v);
+const tom = (w, f, v) => { const o = actx.createOscillator(), g = actx.createGain(); o.type = 'sine';
+  o.frequency.setValueAtTime(f * 1.5, w); o.frequency.exponentialRampToValueAtTime(f, w + .12); env(g, w, .004, .32, v);
+  o.connect(g); g.connect(master); o.start(w); o.stop(w + .4); };
+
+const ROOTS = [92.5, 73.42, 110.0, 82.41];                  // F♯ – D – A – E（原创的简易四小节循环）
+const synth = {
+  timer: 0, next: 0,
+  start() { this.stop(); this.next = Math.ceil(P.time() / BEAT - 1e-6); this.timer = setInterval(() => this.tick(), 40); this.tick(); },
+  stop() { clearInterval(this.timer); this.timer = 0; },
+  tick() {
+    if (!actx || P.mode !== 'demo' || !P.playing) return;
+    const now = P.time();
+    while (this.next * BEAT < now + .3) { this.beat(this.next); this.next++; }
+  },
+  beat(n) {
+    const tm = n * BEAT; if (tm >= TOTAL) return;
+    const when = actx.currentTime + (tm - P.time()); if (when < actx.currentTime - .02) return;
+    const w = Math.max(when, actx.currentTime);
+    const s = secAt(tm), e = s.energy, b = n % 4, bar = Math.floor(n / 4);
+    const chorus = s.id.startsWith('ch'), root = ROOTS[bar % 4];
+    if (s.id === 'intro') { if (b === 0) tom(w, 70, .5); if (b === 2 && bar > 1) tom(w, 85, .4); }
+    else {
+      if (b === 0 || b === 2) kick(w, .45 + .4 * e);
+      if (chorus && b % 2 === 0) kick(w + BEAT / 2, .4);
+      if (b === 1 || b === 3) snare(w, .18 + .25 * e);
+    }
+    if (chorus || s.id === 'br') { hat(w, .1); hat(w + BEAT / 2, .07); }
+    if (b === 0) { tone(w, root * 2, BAR, 'sawtooth', .05 * e + .015, 900); tone(w, root * 3.01, BAR, 'sawtooth', .035 * e + .01, 900); }
+    if (s.id !== 'intro' || bar > 3) {
+      tone(w, root, BEAT * .9, 'triangle', .22 * (.4 + e * .6), 400);
+      if (chorus) tone(w + BEAT / 2, root, BEAT * .4, 'triangle', .16, 400);
+    }
+  },
+};
+
+/* ───────────────────── 节拍 / 低频：驱动画面律动 ───────────────────── */
+let bassAvg = 0, prevBass = 0, cool = 0;
+const hitLog = [];                                          // 真实音频模式下检测到的鼓点
+function updateState(t, dt) {
+  S.t = t; S.sec = secAt(t); S.secIdx = SECTIONS.indexOf(S.sec);
+  S.secT = Math.max(0, t - S.sec.start); S.secP = clamp(S.secT / S.sec.len);
+  const bf = Math.max(0, t) / BEAT; S.beat = Math.floor(bf); S.beatPh = bf - S.beat; S.bar = Math.floor(bf / 4);
+  const e = S.sec.energy;
+  if (P.mode === 'audio' && analyser && isPlaying()) {
+    analyser.getByteFrequencyData(fft);
+    let b = 0, m = 0; for (let i = 1; i <= 4; i++) b += fft[i]; for (let i = 5; i < 40; i++) m += fft[i];
+    b = b / 4 / 255; m = m / 35 / 255;
+    const flux = b - prevBass; prevBass = b;                // 只在低频能量“上升沿”触发，一个鼓点只算一次
+    bassAvg = bassAvg * .93 + b * .07; cool -= dt;
+    if (flux > .04 && b > bassAvg * 1.1 + .03 && cool <= 0) { hitLog.push({ t, seed: (Math.random() * 1e9) | 0 }); cool = .14; S.kick = Math.max(S.kick, clamp(b * 1.3)); }
+    S.kick = Math.max(S.kick * Math.exp(-dt * 9), b * .85);
+    S.bass = b; S.energy = lerp(S.energy, clamp(m * 2.4 + .15), clamp(dt * 3));
+    while (hitLog.length && (t - hitLog[0].t > 2 || t < hitLog[0].t - 1)) hitLog.shift();
+  } else if (P.mode === 'audio') {
+    S.kick *= Math.exp(-dt * 6);
+  } else {
+    const strong = S.beat % 4 === 0 ? 1 : S.beat % 4 === 2 ? .85 : .55;
+    S.kick = Math.exp(-S.beatPh * 5.5) * strong * (.5 + .5 * e);
+    S.snare = S.beat % 2 === 1 ? Math.exp(-S.beatPh * 7) : 0;
+    S.bass = S.kick; S.energy = lerp(S.energy, e, clamp(dt * 3));
+  }
+}
+// 最近 win 秒内的鼓点（演示模式由节拍网格解析得到，因此拖动进度条也能还原画面）
+function recentHits(win) {
+  if (P.mode === 'audio') return hitLog.filter((h) => S.t - h.t >= 0 && S.t - h.t < win).map((h) => ({ age: S.t - h.t, seed: h.seed, str: 1 }));
+  const out = [], b1 = Math.floor(S.t / BEAT);
+  for (let b = b1; b > b1 - Math.ceil(win / BEAT) - 1 && b >= 0; b--) {
+    const age = S.t - b * BEAT; if (age >= 0 && age < win) out.push({ age, seed: b * 7919 + 13, str: b % 4 === 0 ? 1 : b % 4 === 2 ? .85 : .6 });
+  }
+  return out;
+}
+
+/* ───────────────────────── 绘图工具 ───────────────────────── */
+function vgrad(c, y0, y1, stops) {
+  const g = c.createLinearGradient(0, y0, 0, y1); stops.forEach(([o, col]) => g.addColorStop(o, col));
+  c.fillStyle = g; c.fillRect(0, y0, W, y1 - y0);
+}
+function glow(c, x, y, r, col) {
+  c.save(); c.globalCompositeOperation = 'lighter';
+  const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
+  c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill(); c.restore();
+}
+function puff(c, x, y, r, a, rgb = '18,14,12') {                    // 柔边烟团
+  const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, `rgba(${rgb},${a})`); g.addColorStop(1, `rgba(${rgb},0)`);
+  c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
+}
+function band(c, cx, cy, rx, ry, a, rgb) {                           // 柔边云带 / 烟带
+  c.save(); c.translate(cx, cy); c.scale(1, ry / rx); puff(c, 0, 0, rx, a, rgb); c.restore();
+}
+function text(c, s, x, y, o = {}) {
+  const { font = FONT_ZH, size = 24, w = 700, col = COL.ink, align = 'left', alpha = 1, stroke = 0, ls = 0, italic = false, maxW = 0 } = o;
+  let sz = size, sp = ls;
+  c.save(); c.globalAlpha *= alpha; c.textAlign = align; c.textBaseline = 'alphabetic';
+  const setFont = () => { c.font = `${italic ? 'italic ' : ''}${w} ${sz}px ${font}`; if ('letterSpacing' in c) c.letterSpacing = sp + 'px'; };
+  setFont();
+  if (maxW) { const mw = c.measureText(s).width; if (mw > maxW) { sz *= maxW / mw; sp *= maxW / mw; setFont(); } }   // 超宽则整体缩小
+  if (align === 'center') x += sp / 2;
+  if (stroke) { c.lineJoin = 'round'; c.lineWidth = stroke; c.strokeStyle = 'rgba(0,0,0,.72)'; c.strokeText(s, x, y); }
+  c.fillStyle = col; c.fillText(s, x, y); c.restore();
+}
+function rrect(c, x, y, w, h, r) { c.beginPath(); if (c.roundRect) c.roundRect(x, y, w, h, r); else c.rect(x, y, w, h); }
+const hillY = (base, amp, f, ph, t, spd, x) => base + Math.sin((x + t * spd) * f + ph) * amp + Math.sin((x + t * spd) * f * 2.3 + ph * 1.7) * amp * .4;
+function hills(c, base, amp, f, ph, col, t, spd) {
+  c.beginPath(); c.moveTo(0, H);
+  for (let x = 0; x <= W; x += 16) c.lineTo(x, hillY(base, amp, f, ph, t, spd, x));
+  c.lineTo(W, H); c.closePath(); c.fillStyle = col; c.fill();
+}
+// 侧视坦克剪影（原点在履带底部中心，朝 +x）。纯几何轮廓，不含任何徽记。
+function tank(c, x, y, s, dir, col, rim, o = {}) {
+  const { fire = 0, tilt = 0 } = o;
+  const body = (dx, dy, fill) => {
+    c.save(); c.translate(x + dx, y + dy); c.rotate(tilt); c.scale(s * dir, s); c.fillStyle = fill;
+    rrect(c, -48, -16, 96, 16, 8); c.fill();
+    c.beginPath(); c.moveTo(-44, -16); c.lineTo(-38, -34); c.lineTo(36, -34); c.lineTo(48, -18); c.lineTo(48, -16); c.closePath(); c.fill();
+    c.beginPath(); c.moveTo(-20, -34); c.lineTo(-14, -50); c.lineTo(14, -50); c.lineTo(24, -34); c.closePath(); c.fill();
+    c.fillRect(20 - fire * 7, -46, 52, 5);
+    c.restore();
+  };
+  if (rim) body(0, -1.6 * s, rim);
+  body(0, 0, col);
+  c.save(); c.translate(x, y); c.rotate(tilt); c.scale(s * dir, s); c.fillStyle = 'rgba(255,255,255,.07)';
+  for (let wx = -38; wx <= 38; wx += 15) { c.beginPath(); c.arc(wx, -8, 5.5, 0, TAU); c.fill(); }
+  c.restore();
+}
+function tankTop(c, x, y, ang, col, rim, s = 1.3) {
+  c.save(); c.translate(x, y); c.rotate(ang); c.scale(s, s);
+  c.fillStyle = 'rgba(0,0,0,.55)'; c.fillRect(-16, -11, 32, 5); c.fillRect(-16, 6, 32, 5);
+  c.fillStyle = col; c.fillRect(-14, -7, 28, 14); c.strokeStyle = rim; c.lineWidth = 1; c.strokeRect(-14, -7, 28, 14);
+  c.fillStyle = rim; c.fillRect(4, -1.3, 19, 2.6);
+  c.fillStyle = col; c.beginPath(); c.arc(-1, 0, 6.5, 0, TAU); c.fill(); c.stroke();
+  c.restore();
+}
+// 以 age（秒）为参数的解析式爆炸：无状态，所以拖动进度条也能得到一致的画面
+function boom(c, x, y, age, seed, pow = 1) {
+  if (age < 0 || age > 1.3) return;
+  const r = rng(seed), a = 1 - age / 1.3;
+  c.save(); c.globalCompositeOperation = 'lighter';
+  const R = (24 + age * 150) * pow, g = c.createRadialGradient(x, y, 0, x, y, R);
+  g.addColorStop(0, `rgba(255,232,170,${a * .9})`); g.addColorStop(.35, `rgba(255,120,40,${a * .6})`); g.addColorStop(1, 'rgba(120,20,0,0)');
+  c.fillStyle = g; c.beginPath(); c.arc(x, y, R, 0, TAU); c.fill();
+  c.strokeStyle = `rgba(255,200,120,${a * a * .4})`; c.lineWidth = 2; c.beginPath(); c.arc(x, y, age * 170 * pow, 0, TAU); c.stroke();
+  c.strokeStyle = `rgba(255,190,90,${a})`; c.lineWidth = 1.6;
+  for (let i = 0; i < 10; i++) {
+    const ang = r() * Math.PI * 1.3 - Math.PI * 1.15, sp = 110 + r() * 250;
+    const px = x + Math.cos(ang) * sp * age, py = y + Math.sin(ang) * sp * age + 260 * age * age;
+    c.beginPath(); c.moveTo(px, py); c.lineTo(px - Math.cos(ang) * 9, py - Math.sin(ang) * 9 - 3); c.stroke();
+  }
+  c.restore();
+  for (let i = 0; i < 4; i++) {
+    const sx = x + (r() - .5) * 40, sy = y - age * (30 + r() * 50) - i * 6;
+    puff(c, sx, sy, (12 + age * (28 + r() * 22)) * pow, a * .6, '20,16,16');
+  }
+}
+const noiseCanvas = (seed, w, h, fn) => { const k = document.createElement('canvas'); k.width = w; k.height = h; fn(k.getContext('2d'), rng(seed)); return k; };
+const GRAIN = noiseCanvas(1, 256, 256, (x) => {
+  const id = x.createImageData(256, 256);
+  for (let i = 0; i < id.data.length; i += 4) { const v = Math.random() * 255; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 24; }
+  x.putImageData(id, 0, 0);
+});
+const GRAIN_PAT = ctx.createPattern(GRAIN, 'repeat');
+const VIG = noiseCanvas(2, W, H, (x) => {
+  const g = x.createRadialGradient(W / 2, H / 2, H * .35, W / 2, H / 2, W * .62);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.68)'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+});
+const GROUND = noiseCanvas(3, W, H, (x, r) => {
+  x.fillStyle = '#1b150d'; x.fillRect(0, 0, W, H);
+  for (let i = 0; i < 90; i++) { const px = r() * W, py = r() * H, pr = 60 + r() * 160, g = x.createRadialGradient(px, py, 0, px, py, pr);
+    const dark = r() < .5; g.addColorStop(0, dark ? 'rgba(0,0,0,.28)' : 'rgba(120,90,50,.10)'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(px - pr, py - pr, pr * 2, pr * 2); }
+  for (let i = 0; i < 2600; i++) { x.fillStyle = r() < .5 ? 'rgba(90,70,40,.35)' : 'rgba(0,0,0,.35)'; x.fillRect(r() * W, r() * H, 1 + r() * 2, 1); }
+});
+
+/* ───────────────────────── 场景 1：序章 / 尾声（草原） ───────────────────────── */
+const PAL = {
+  dusk: { sky: [[0, '#0a1020'], [.5, '#3b2a42'], [1, '#c0592c']], sun: '#ffb36b', glow: 'rgba(255,140,60,.55)', h: ['#2b1f2b', '#1a1319', '#0d0a0e'], wheat: 'rgba(176,122,60,.55)' },
+  dawn: { sky: [[0, '#0a0f1d'], [.45, '#4a5f7c'], [1, '#f0b27c']], sun: '#ffe0b0', glow: 'rgba(255,200,140,.6)', h: ['#2a3342', '#1b222d', '#0e1218'], wheat: 'rgba(196,166,104,.5)' },
+};
+const WHEAT = (() => { const r = rng(11), a = []; for (let i = 0; i < 520; i++) a.push({ x: r() * W, y: H * (.76 + r() * .24), l: 26 + r() * 46, ph: r() * 6.28 }); return a; })();
+function landscape(c, pal, t, o) {
+  vgrad(c, 0, H * .68, pal.sky);
+  const sx = W * (o.sunX ?? .68), sy = H * o.sunY;
+  glow(c, sx, sy, 300, pal.glow); c.fillStyle = pal.sun; c.beginPath(); c.arc(sx, sy, o.sunR ?? 38, 0, TAU); c.fill();
+  c.save(); c.globalAlpha = .16; c.fillStyle = '#fff';
+  for (let i = 0; i < 5; i++) { const cx = ((i * 330 + t * (4 + i * 1.5)) % (W + 400)) - 200; c.beginPath(); c.ellipse(cx, 90 + i * 38, 220, 6 + i, 0, 0, TAU); c.fill(); }
+  c.restore();
+  hills(c, H * .62, 10, .006, 1, pal.h[0], t, 3);
+  hills(c, H * .66, 14, .004, 2, pal.h[1], t, 6);
+  if (o.column) {                                            // 远处缓缓推进的装甲纵队
+    for (let i = 0; i < 14; i++) {
+      const x = ((i * 118 + t * 20) % (W + 240)) - 120, y = hillY(H * .66, 14, .004, 2, t, 6, x) + 5;
+      glow(c, x - 40, y - 6, 34, 'rgba(120,80,50,.16)');
+      tank(c, x, y, .26 + (i % 3) * .02, 1, '#07080b', 'rgba(255,170,100,.35)');
+    }
+  }
+  if (o.wrecks) for (let i = 0; i < 4; i++) {
+    const x = 160 + i * 290, y = hillY(H * .74, 18, .003, 3, t, 10, x) + 4;
+    tank(c, x, y, .5, i % 2 ? -1 : 1, '#07080b', 'rgba(255,200,150,.25)', { tilt: (i - 1.5) * .06 });
+    for (let j = 0; j < 4; j++) { const u = ((t * .08 + j / 4 + i * .21) % 1); puff(c, x + Math.sin(u * 5 + i) * 10, y - 30 - u * 150, 10 + u * 28, (1 - u) * .55, '14,12,14'); }
+  }
+  hills(c, H * .74, 18, .003, 3, pal.h[2], t, 10);
+  c.fillStyle = pal.h[2]; c.fillRect(0, H * .8, W, H);
+  c.strokeStyle = pal.wheat; c.lineWidth = 1.4; c.lineCap = 'round';
+  for (const w of WHEAT) { const sw = Math.sin(t * 1.5 + w.x * .02 + w.ph) * 6; c.beginPath(); c.moveTo(w.x, w.y); c.quadraticCurveTo(w.x + sw * .4, w.y - w.l * .6, w.x + sw, w.y - w.l); c.stroke(); }
+}
+const sceneSteppe = (c) => landscape(c, PAL.dusk, S.secT, { sunY: .6, column: true });
+const sceneDawn = (c) => landscape(c, PAL.dawn, S.secT, { sunY: lerp(.72, .56, S.secP), sunX: .5, sunR: 46, wrecks: true });
+
+/* ───────────────────────── 场景 2/9：战区示意图 ───────────────────────── */
+const SALIENT = [[760, 120], [560, 150], [420, 230], [350, 340], [370, 450], [470, 540], [640, 590], [780, 600]];
+const CITIES = [['奥廖尔', 'Orel', 740, 112], ['库尔斯克', 'Kursk', 500, 350], ['别尔哥罗德', 'Belgorod', 760, 612], ['普罗霍罗夫卡', 'Prokhorovka', 640, 470]];
+function smoothLine(c, pts) {
+  c.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length - 1; i++) c.quadraticCurveTo(pts[i][0], pts[i][1], (pts[i][0] + pts[i + 1][0]) / 2, (pts[i][1] + pts[i + 1][1]) / 2);
+  const l = pts[pts.length - 1]; c.lineTo(l[0], l[1]);
+}
+function mapBase(c, t) {
+  vgrad(c, 0, H, [[0, '#0b1117'], [1, '#080b0f']]);
+  c.strokeStyle = 'rgba(143,163,179,.07)'; c.lineWidth = 1; c.beginPath();
+  for (let x = 0; x <= W; x += 40) { c.moveTo(x, 0); c.lineTo(x, H); } for (let y = 0; y <= H; y += 40) { c.moveTo(0, y); c.lineTo(W, y); } c.stroke();
+  c.save(); c.translate(640, 322); c.scale(.86, .86); c.translate(-640, -360);   // 地图内容整体上移缩小，给字幕让位
+  c.beginPath(); smoothLine(c, SALIENT); c.lineTo(900, 600); c.lineTo(900, 120); c.closePath();
+  const rg = c.createLinearGradient(350, 0, 900, 0); rg.addColorStop(0, 'rgba(200,40,30,.10)'); rg.addColorStop(1, 'rgba(200,40,30,0)'); c.fillStyle = rg; c.fill();
+  c.beginPath(); smoothLine(c, SALIENT); c.setLineDash([12, 8]); c.lineDashOffset = -t * 12; c.strokeStyle = 'rgba(143,163,179,.75)'; c.lineWidth = 2.4; c.stroke(); c.setLineDash([]);
+  text(c, '库尔斯克突出部 · KURSK SALIENT', 360, 112, { font: FONT_EN, size: 15, w: 500, col: 'rgba(143,163,179,.8)', ls: 2 });
+  for (const [zh, en, x, y] of CITIES) {
+    c.fillStyle = COL.ink; c.beginPath(); c.arc(x, y, 4.5, 0, TAU); c.fill();
+    c.strokeStyle = 'rgba(233,228,214,.35)'; c.lineWidth = 1; c.beginPath(); c.arc(x, y, 9, 0, TAU); c.stroke();
+    text(c, zh, x + 16, y + 1, { size: 17, stroke: 4 }); text(c, en.toUpperCase(), x + 16, y + 17, { font: FONT_EN, size: 11, w: 400, col: COL.steel, ls: 1.5 });
+  }
+}
+function mapEnd(c) {
+  c.restore();
+  text(c, '← 西 / 德军方向', 36, 384, { size: 13, col: 'rgba(143,163,179,.55)' });
+  text(c, '示意图 · 非精确地图', 36, H - 66, { size: 12, col: 'rgba(143,163,179,.4)' });
+}
+const qb = (a, b, c2, u) => (1 - u) * (1 - u) * a + 2 * (1 - u) * u * b + u * u * c2;
+function arrow(c, p, prog, col, w, t) {
+  if (prog <= 0) return;
+  const N = 48, n = Math.floor(N * clamp(prog));
+  const at = (u) => [qb(p[0][0], p[1][0], p[2][0], u), qb(p[0][1], p[1][1], p[2][1], u)];
+  c.save(); c.lineCap = 'round'; c.lineJoin = 'round'; c.strokeStyle = col; c.shadowColor = col; c.shadowBlur = 16;
+  c.lineWidth = w; c.beginPath(); for (let i = 0; i <= n; i++) { const [x, y] = at(i / N); i ? c.lineTo(x, y) : c.moveTo(x, y); } c.stroke();
+  c.shadowBlur = 0; c.strokeStyle = 'rgba(255,255,255,.55)'; c.lineWidth = 1.6; c.setLineDash([2, 16]); c.lineDashOffset = -t * 40;
+  c.beginPath(); for (let i = 0; i <= n; i++) { const [x, y] = at(i / N); i ? c.lineTo(x, y) : c.moveTo(x, y); } c.stroke(); c.setLineDash([]);
+  const [hx, hy] = at(n / N), [px, py] = at(Math.max(0, n - 2) / N), a = Math.atan2(hy - py, hx - px);
+  c.translate(hx, hy); c.rotate(a); c.fillStyle = col; c.beginPath(); c.moveTo(14, 0); c.lineTo(-8, -10); c.lineTo(-4, 0); c.lineTo(-8, 10); c.closePath(); c.fill();
+  c.restore();
+}
+function statLine(c, x, y, big, label, alpha) {
+  text(c, big, x, y, { font: FONT_EN, size: 40, w: 700, alpha, col: COL.ink });
+  text(c, label, x, y + 22, { size: 14, alpha: alpha * .85, col: COL.steel });
+}
+function sceneMap(c) {
+  const t = S.secT, p = S.secP;
+  mapBase(c, t);
+  arrow(c, [[700, 130], [640, 230], [566, 300]], sm(.03, .5, p), COL.steel, 7, t);   // 北翼
+  arrow(c, [[724, 592], [650, 480], [548, 392]], sm(.06, .55, p), COL.steel, 7, t);  // 南翼
+  mapEnd(c);
+  const u = sm(7.5 * BAR, 8.2 * BAR, t);
+  if (u > 0) {
+    c.save(); c.globalAlpha = u; c.fillStyle = 'rgba(8,11,15,.82)'; rrect(c, 880, 150, 340, 330, 10); c.fill();
+    c.strokeStyle = 'rgba(143,163,179,.35)'; c.stroke(); c.restore();
+    const k = sm(8 * BAR, 12 * BAR, t);
+    text(c, '德军  GERMAN', 904, 186, { size: 15, col: COL.steel, alpha: u, ls: 2 });
+    statLine(c, 904, 232, num(777000 * k), '兵力 · troops', u);
+    statLine(c, 904, 306, num(2451 * k), '坦克与突击炮 · tanks & assault guns', u);
+    text(c, '苏军  SOVIET', 904, 368, { size: 15, col: COL.redHi, alpha: u, ls: 2 });
+    statLine(c, 904, 414, '~' + num(1300000 * k), '防御兵力 · defending troops', u);
+    text(c, '数据：Wikipedia · Battle of Kursk', 904, 468, { size: 11, alpha: u * .5, col: COL.steel });
+  }
+}
+function sceneCounter(c) {
+  const t = S.secT, p = S.secP;
+  mapBase(c, t);
+  for (const h of recentHits(1.1)) { c.save(); c.strokeStyle = `rgba(255,90,60,${(1 - h.age / 1.1) * .45 * h.str})`; c.lineWidth = 3; c.beginPath(); c.arc(500, 350, h.age * 640, 0, TAU); c.stroke(); c.restore(); }
+  const a1 = sm(.03, .4, p), a2 = sm(.5, .9, p);
+  arrow(c, [[900, 270], [800, 170], [650, 78]], a1, COL.redHi, 8, t);
+  arrow(c, [[920, 440], [850, 570], [660, 640]], a2, COL.redHi, 8, t);
+  text(c, '库图佐夫行动 · KUTUZOV', 880, 250, { size: 15, alpha: a1, stroke: 4, col: COL.redHi });
+  text(c, '鲁勉采夫统帅行动 · RUMYANTSEV', 900, 470, { size: 15, alpha: a2, stroke: 4, col: COL.redHi });
+  mapEnd(c);
+  for (let i = 0; i < 9; i++) {                              // 底部：一路向西推进的红色装甲纵队
+    const x = W - (((i * 160 + t * 36) % (W + 300)) - 150);
+    tank(c, x, 650, .3, -1, '#1a0807', COL.redHi);
+  }
+}
+
+/* ───────────────────────── 场景 3：夜间布雷 ───────────────────────── */
+const MINES = (() => { const r = rng(77), b = []; for (let i = 0; i < 6; i++) { const d = []; for (let j = 0; j < 110; j++) d.push([r(), r()]); b.push(d); } return b; })();
+function sceneMines(c) {
+  const t = S.secT, p = S.secP;
+  vgrad(c, 0, H, [[0, '#04070c'], [1, '#0b1118']]);
+  c.strokeStyle = 'rgba(143,163,179,.05)'; c.beginPath(); for (let x = 0; x <= W; x += 40) { c.moveTo(x, 0); c.lineTo(x, H); } for (let y = 0; y <= H; y += 40) { c.moveTo(0, y); c.lineTo(W, y); } c.stroke();
+  const fp = (t / (BAR * 2)) % 1, fi = Math.floor(t / (BAR * 2)), fx = 200 + ((fi * 389) % 880);   // 照明弹
+  const fb = Math.sin(fp * Math.PI);
+  glow(c, fx, 70 + fp * 140, 340, `rgba(200,230,170,${.20 * fb})`); glow(c, fx, 70 + fp * 140, 14, `rgba(255,255,220,${.9 * fb})`);
+  for (let b = 0; b < 6; b++) {                              // 战壕
+    const x0 = 150 + b * 160 + 120, k = sm(b / 7, b / 7 + .2, p);
+    c.save(); c.globalAlpha = k * .7; c.strokeStyle = 'rgba(143,163,179,.55)'; c.lineWidth = 2; c.beginPath();
+    for (let y = 190; y <= 540; y += 20) { const x = x0 + ((y / 20) % 2 ? 12 : -2); y === 190 ? c.moveTo(x, y) : c.lineTo(x, y); } c.stroke(); c.restore();
+    text(c, ['I', 'II', 'III', 'IV', 'V', 'VI'][b], 150 + b * 160 + 55, 190, { font: FONT_EN, size: 20, col: COL.steel, alpha: .8 * k, align: 'center', ls: 2 });
+  }
+  const total = 660, n = Math.floor(clamp(p * 1.12) * total), pulse = 1 + S.kick * .6;
+  c.fillStyle = '#d3382b';
+  for (let b = 0; b < 6; b++) for (let i = 0; i < 110; i++) {
+    const idx = b * 110 + i; if (idx >= n) break;
+    const d = MINES[b][i], x = 150 + b * 160 + d[0] * 110, y = 200 + d[1] * 340;
+    c.beginPath(); c.arc(x, y, 2.3 * pulse + (n - idx < 12 ? 3 : 0), 0, TAU); c.fill();
+  }
+  const k = clamp(p * 1.12);
+  text(c, num(943000 * k) + '+', W / 2, 138, { font: FONT_EN, size: 62, align: 'center', col: COL.ink, ls: 2 });
+  text(c, '地雷 · MINES LAID', W / 2, 158, { size: 14, align: 'center', col: COL.steel, ls: 3 });
+  text(c, '← 德军方向', 36, 400, { size: 13, col: 'rgba(143,163,179,.55)' });
+  text(c, '苏军后方 →', W - 36, 400, { size: 13, col: 'rgba(143,163,179,.55)', align: 'right' });
+}
+
+/* ───────────────────────── 场景 4：副歌 · 装甲对决 ───────────────────────── */
+const CT = []; for (const side of [-1, 1]) for (let r = 0; r < 3; r++) for (let i = 0; i < 3; i++) CT.push({ side, r, i });
+function ctPos(tk, adv) {
+  const sc = [.78, 1.02, 1.3][tk.r], y = H * [.7, .775, .87][tk.r], x0 = 70 + tk.i * 160 + tk.r * 36, d = adv * (.6 + tk.r * .3);
+  return { x: tk.side < 0 ? x0 + d : W - x0 - d, y, sc };
+}
+function sceneClash(c) {
+  const t = S.secT, p = S.secP, k = S.kick;
+  vgrad(c, 0, H * .72, [[0, '#120a0c'], [.5, '#5a1f12'], [1, '#e0802d']]);
+  glow(c, W / 2, H * .66, 560, 'rgba(255,120,40,.38)');
+  for (let i = 0; i < 6; i++) band(c, ((i * 260 + t * (10 + i * 3)) % (W + 500)) - 250, 140 + (i % 3) * 70, 300, 46 + i * 4, .55, '12,7,7');
+  const pop = 1 + sm(0, .5, 1 - clamp(t / 1.4)) * .25 + k * .05;                          // 巨幅标题
+  c.save(); c.translate(W / 2, 300); c.scale(pop, pop);
+  text(c, 'PANZERKAMPF', 0, 0, { font: FONT_EN, size: 168, w: 700, align: 'center', col: `rgba(255,150,80,${.1 + k * .12})`, ls: 10, maxW: 1160 });
+  c.restore();
+  hills(c, H * .69, 8, .008, 5, '#0d0907', t, 0); c.fillStyle = '#0d0907'; c.fillRect(0, H * .7, W, H);
+  const hits = recentHits(1.3), adv = p * 60 + k * 7;
+  const lastAge = hits.length ? Math.min(...hits.map((h) => h.age)) : 9;
+  for (let r = 0; r < 3; r++) for (const tk of CT) if (tk.r === r) {
+    const q = ctPos(tk, adv), L = tk.side < 0;
+    tank(c, q.x, q.y, q.sc, L ? 1 : -1, L ? '#121a21' : '#2a0f0d', L ? 'rgba(143,163,179,.7)' : 'rgba(255,90,60,.8)', { fire: clamp(1 - lastAge * 4) * (((tk.i + tk.r) % 3) === 0 ? 1 : 0) });
+  }
+  for (const h of hits) {
+    const r = rng(h.seed), shooter = CT[Math.floor(r() * CT.length)], targets = CT.filter((q) => q.side !== shooter.side), target = targets[Math.floor(r() * targets.length)];
+    const sp = ctPos(shooter, adv), tp = ctPos(target, adv), dir = shooter.side < 0 ? 1 : -1;
+    const mx = sp.x + dir * 72 * sp.sc, my = sp.y - 43 * sp.sc, tx = tp.x, ty = tp.y - 30 * tp.sc;
+    if (h.age < .14) glow(c, mx, my, 70 * (1 - h.age / .14) + 10, 'rgba(255,210,120,.9)');
+    if (h.age < .2) { const u = h.age / .2; c.save(); c.globalCompositeOperation = 'lighter'; c.strokeStyle = 'rgba(255,230,160,.9)'; c.lineWidth = 2.5;
+      c.beginPath(); c.moveTo(lerp(mx, tx, Math.max(0, u - .25)), lerp(my, ty, Math.max(0, u - .25))); c.lineTo(lerp(mx, tx, u), lerp(my, ty, u)); c.stroke(); c.restore(); }
+    boom(c, tx, ty, h.age - .2, h.seed, (.8 + target.r * .2) * (.7 + .3 * h.str));
+  }
+}
+
+/* ───────────────────────── 场景 5：普罗霍罗夫卡 · 坦克混战（俯视） ───────────────────────── */
+const PK = (() => { const r = rng(4242), a = [];
+  for (let i = 0; i < 40; i++) a.push({ side: i % 2 ? 1 : -1, y0: 140 + r() * 440, mx: W / 2 + (r() - .5) * 380, my: 190 + r() * 340, ta: 6 + r() * 10,
+    td: r() < .78 ? 12 + r() * 40 : 1e9, ph: r() * 6.28, rad: 14 + r() * 32, spd: .5 + r() * .6, fp: 1.6 + r() * 2.2, fo: r() * 3, seed: i * 31 + 5 });
+  return a; })();
+function pkPos(a, tt) {
+  tt = Math.min(tt, a.td);
+  const k = clamp(tt / a.ta), e = k * k * (3 - 2 * k), sx = a.side < 0 ? -50 : W + 50;
+  let x = lerp(sx, a.mx, e), y = lerp(a.y0, a.my, e) + Math.sin(tt * a.spd + a.ph) * 18 * (1 - e);
+  if (k >= 1) { const q = tt - a.ta, w = .35 * a.spd; x += a.rad * (Math.cos(a.ph + q * w) - Math.cos(a.ph)); y += a.rad * .7 * (Math.sin(a.ph + q * w * 1.3) - Math.sin(a.ph)); }
+  return [x, y];
+}
+function scenePk(c) {
+  const T = S.secT + (S.sec.cont ? SECTIONS[S.secIdx - 1].len : 0), p = clamp(T / (SECTIONS[4].len + SECTIONS[5].len));
+  c.drawImage(GROUND, 0, 0);
+  for (const a of PK) {                                      // 履带印
+    let prev = null; c.lineWidth = 5; c.lineCap = 'round';
+    for (let j = 0; j <= 16; j++) { const q = pkPos(a, T - j * .18); if (prev) { c.strokeStyle = `rgba(0,0,0,${.3 * (1 - j / 16)})`; c.beginPath(); c.moveTo(prev[0], prev[1]); c.lineTo(q[0], q[1]); c.stroke(); } prev = q; }
+  }
+  for (const a of PK) if (T >= a.td) {                       // 残骸与浓烟
+    const [x, y] = pkPos(a, T), age = T - a.td, flick = .6 + .4 * Math.sin(T * 9 + a.ph);
+    tankTop(c, x, y, a.ph, '#0e0c0a', '#3a2a20');
+    glow(c, x, y, 26 * flick + 8, 'rgba(255,110,40,.5)');
+    for (let j = 0; j < 5; j++) { const u = (age * .22 + j / 5) % 1; puff(c, x + Math.sin(u * 4 + j) * 8, y - u * 100, 12 + u * 34, (1 - u) * .5); }
+  }
+  for (const a of PK) if (T < a.td) {
+    const [x, y] = pkPos(a, T), [x2, y2] = pkPos(a, T + .06), ang = Math.atan2(y2 - y, x2 - x) || (a.side < 0 ? 0 : Math.PI);
+    tankTop(c, x, y, ang, a.side < 0 ? '#4a5864' : '#6a2a22', a.side < 0 ? COL.steel : '#e0502f');
+    const f = (T + a.fo) % a.fp;
+    if (T > a.ta * .7 && f < .13) { const u = 1 - f / .13; glow(c, x + Math.cos(ang) * 30, y + Math.sin(ang) * 30, 22 * u + 6, 'rgba(255,220,140,.95)'); }
+  }
+  for (const a of PK) if (T >= a.td) boom(c, ...pkPos(a, T), T - a.td, a.seed, 1.15);
+  c.fillStyle = `rgba(160,105,50,${.07 + p * .13 + S.kick * .03})`; c.fillRect(0, 0, W, H);   // 尘雾随战斗加深
+  text(c, '12 JULY 1943 · PROKHOROVKA', 40, 140, { font: FONT_EN, size: 16, w: 500, col: 'rgba(233,228,214,.7)', ls: 3, stroke: 4 });
+  text(c, '示意：俯视视角 · 非逐辆还原', 40, 160, { size: 12, col: 'rgba(233,228,214,.45)', stroke: 3 });
+}
+
+/* ───────────────────────── 场景 6：间奏 · 残骸与代价 ───────────────────────── */
+const WR = (() => { const r = rng(909), a = []; for (let i = 0; i < 9; i++) a.push({ x: 80 + i * 150 + r() * 60, y: H * (.8 + r() * .08), sc: .95 + r() * .6, dir: r() < .5 ? 1 : -1, tilt: (r() - .5) * .35, ph: r() * 6 }); return a; })();
+const EMB = (() => { const r = rng(31), a = []; for (let i = 0; i < 70; i++) a.push({ x: r() * W, s: r(), w: r() }); return a; })();
+function sceneWreck(c) {
+  const t = S.secT, p = S.secP;
+  vgrad(c, 0, H * .7, [[0, '#050405'], [.45, '#2a0c0c'], [1, '#8a2a14']]);
+  glow(c, W * .62, H * .55, 440, 'rgba(220,70,30,.45)'); c.fillStyle = 'rgba(235,110,60,.82)'; c.beginPath(); c.arc(W * .62, H * .55, 46, 0, TAU); c.fill();
+  for (let i = 0; i < 7; i++) band(c, ((i * 240 + t * (6 + i * 2)) % (W + 500)) - 250, 120 + (i % 4) * 65, 290, 50 + i * 5, .6, '10,6,6');
+  hills(c, H * .72, 8, .005, 4, '#0a0606', t, 2); c.fillStyle = '#0a0606'; c.fillRect(0, H * .74, W, H);
+  const pan = -t * 5;
+  for (const w of WR) {
+    const x = ((w.x + pan) % (W + 200) + W + 200) % (W + 200) - 100, y = w.y;
+    tank(c, x, y, w.sc, w.dir, '#060505', 'rgba(255,120,60,.45)', { tilt: w.tilt });
+    const fl = .65 + .35 * Math.sin(t * 8 + w.ph * 3) * Math.sin(t * 3.3 + w.ph);
+    glow(c, x, y - 40 * w.sc, 54 * w.sc * fl + 12, 'rgba(255,110,40,.55)');
+    for (let j = 0; j < 5; j++) { const u = (t * .1 + j / 5 + w.ph) % 1; puff(c, x + Math.sin(u * 5 + j + w.ph) * 14, y - 60 * w.sc - u * 260, 16 + u * 52, (1 - u) * .6, '12,8,8'); }
+  }
+  c.save(); c.globalCompositeOperation = 'lighter';
+  for (const e of EMB) { const u = (t * (.05 + e.s * .06) + e.w) % 1; c.fillStyle = `rgba(255,${120 + e.s * 90 | 0},60,${(1 - u) * .8})`; c.fillRect(e.x + Math.sin(u * 9 + e.w * 9) * 26, H * .82 - u * H * .7, 2, 2); }
+  c.restore();
+  const a = sm(6 * BAR, 6.8 * BAR, t) * (1 - sm(14.5 * BAR, 15.5 * BAR, t));              // 估计伤亡对比
+  if (a > 0) {
+    const gk = sm(6.2 * BAR, 8.5 * BAR, t), sk = sm(9.5 * BAR, 12 * BAR, t), sc2 = 380 / 863000, bx = 800, by = 190;
+    c.save(); c.globalAlpha = a; c.fillStyle = 'rgba(8,8,10,.72)'; rrect(c, bx - 26, by - 52, 470, 210, 10); c.fill(); c.restore();
+    text(c, '全战役估计伤亡 · EST. CASUALTIES (WHOLE BATTLE)', bx, by - 24, { size: 12, col: COL.steel, alpha: a, ls: 1 });
+    c.save(); c.globalAlpha = a;
+    c.fillStyle = COL.steel; c.fillRect(bx, by, 165000 * sc2 * gk, 26); c.fillStyle = 'rgba(143,163,179,.4)'; c.fillRect(bx + 165000 * sc2 * gk, by, 38000 * sc2 * gk, 26);
+    c.fillStyle = COL.redHi; c.fillRect(bx, by + 78, 863000 * sc2 * sk, 26); c.restore();
+    text(c, '德军 GERMAN  165,000–203,000', bx, by + 54, { size: 14, alpha: a * gk });
+    text(c, '苏军 SOVIET  ~863,000', bx, by + 132, { size: 14, alpha: a * sk });
+  }
+}
+
+const SCENES = { steppe: sceneSteppe, map: sceneMap, mines: sceneMines, clash: sceneClash, prok: scenePk, wreck: sceneWreck, counter: sceneCounter, dawn: sceneDawn };
+
+/* ───────────────────────── 叠层：字幕 · 标题 · 黑边 · HUD ───────────────────────── */
+function captions(c) {
+  const s = S.sec, bars = S.secT / BAR; let idx = -1;
+  for (let i = 0; i < s.cap.length; i++) if (bars >= s.cap[i][0]) idx = i;
+  if (idx < 0) return;
+  const t0 = s.cap[idx][0] * BAR, nxt = idx + 1 < s.cap.length ? s.cap[idx + 1][0] : (s.capEnd ?? s.bars), t1 = nxt * BAR;
+  if (S.secT > t1) return;
+  const a = Math.min(sm(t0, t0 + .45, S.secT), 1 - sm(t1 - .4, t1, S.secT)), rise = (1 - sm(t0, t0 + .5, S.secT)) * 14;
+  c.save(); const g = c.createLinearGradient(0, H - 190, 0, H - BAR_H); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${.62 * a})`);
+  c.fillStyle = g; c.fillRect(0, H - 190, W, 190 - BAR_H); c.restore();
+  const y = H - 112 + rise;
+  text(c, s.cap[idx][1], W / 2, y, { size: 36, w: 800, align: 'center', alpha: a, stroke: 7, ls: 1, maxW: 1100 });
+  text(c, s.cap[idx][2], W / 2, y + 34, { font: FONT_EN, size: 20, w: 400, align: 'center', alpha: a * .9, col: COL.steel, ls: 2, stroke: 5, maxW: 1100 });
+}
+function sectionTag(c) {
+  const s = S.sec, a = sm(0, .5, S.secT) * (1 - sm(s.len - .6, s.len, S.secT)), x = 40 + (1 - sm(0, .6, S.secT)) * -24, y = BAR_H + 26;
+  c.save(); c.globalAlpha = a; c.fillStyle = s.id.startsWith('ch') ? COL.red : 'rgba(10,13,17,.85)'; rrect(c, x, y, 12 + s.tag.length * 10.4, 24, 3); c.fill(); c.restore();
+  text(c, s.tag, x + 8, y + 17, { font: FONT_EN, size: 14, w: 600, ls: 2, alpha: a });
+  text(c, s.zh, x + 18 + s.tag.length * 10.4, y + 18, { size: 16, alpha: a * .85, col: COL.steel, stroke: 4 });
+}
+function titleCard(c) {
+  if (S.sec.id !== 'intro') return;
+  const t = S.secT, a = sm(.8, 2.2, t) * (1 - sm(13.5, 16.5, t)), z = 1 + (1 - sm(.8, 4, t)) * .05;
+  if (a <= 0) return;
+  c.save(); c.translate(W / 2, 330); c.scale(z, z);
+  text(c, 'PANZERKAMPF', 0, 0, { font: FONT_EN, size: 150, w: 700, align: 'center', alpha: a, ls: 14, stroke: 10, maxW: 1040 });
+  text(c, '库尔斯克会战 · THE BATTLE OF KURSK · 1943', 0, 48, { size: 24, w: 500, align: 'center', alpha: a, col: COL.brass, ls: 6, stroke: 5 });
+  text(c, 'SABATON  ·  THE ART OF WAR (2008)  ·  98 BPM  ·  F♯ MINOR', 0, 88, { font: FONT_EN, size: 16, w: 400, align: 'center', alpha: a * .8, col: COL.steel, ls: 4, stroke: 4 });
+  c.restore();
+}
+function endCard(c) {
+  if (S.sec.id !== 'out') return;
+  const a = sm(S.sec.len - 5.8, S.sec.len - 4.2, S.secT) * (1 - sm(S.sec.len - .6, S.sec.len, S.secT)); if (a <= 0) return;
+  c.save(); c.fillStyle = `rgba(0,0,0,${.35 * a})`; c.fillRect(0, 0, W, H); c.restore();
+  text(c, 'PANZERKAMPF', W / 2, 330, { font: FONT_EN, size: 96, align: 'center', alpha: a, ls: 12, maxW: 760 });
+  text(c, '音乐 / MUSIC  ·  SABATON — Panzerkampf  (The Art of War, 2008)', W / 2, 384, { size: 17, align: 'center', alpha: a * .9, col: COL.brass, ls: 2, stroke: 5 });
+  text(c, '词曲 / WORDS & MUSIC  ·  Joakim Brodén · Pär Sundström', W / 2, 410, { size: 15, align: 'center', alpha: a * .9, col: COL.ink, ls: 1, stroke: 5 });
+  text(c, '画面 / VISUALS  ·  原创 Canvas 动画 · 史实数据来自 Wikipedia', W / 2, 436, { size: 15, align: 'center', alpha: a * .9, col: COL.ink, ls: 1, stroke: 5 });
+}
+function hud(c) {
+  c.fillStyle = '#000'; c.fillRect(0, 0, W, BAR_H); c.fillRect(0, H - BAR_H, W, BAR_H);
+  text(c, 'KURSK · 1943', 40, 28, { font: FONT_EN, size: 14, w: 500, col: COL.steel, ls: 4 });
+  text(c, `${fmt(S.t)}  /  ${fmt(Math.max(TOTAL, 0))}    ·    98 BPM    ·    F♯m    ·    BAR ${String(S.bar + 1).padStart(3, '0')}`, W - 40, 28, { font: FONT_EN, size: 14, w: 500, col: COL.steel, ls: 3, align: 'right' });
+  const y = H - BAR_H + 20, w = W - 80;
+  c.fillStyle = 'rgba(233,228,214,.16)'; c.fillRect(40, y, w, 2);
+  for (const s of SECTIONS) { c.fillStyle = 'rgba(233,228,214,.4)'; c.fillRect(40 + s.start / TOTAL * w, y - 3, 1, 8); }
+  c.fillStyle = COL.redHi; c.fillRect(40, y, clamp(S.t / TOTAL) * w, 2);
+  for (let i = 0; i < 4; i++) { const on = S.beat % 4 === i; c.fillStyle = on ? COL.redHi : 'rgba(233,228,214,.2)'; c.beginPath(); c.arc(W - 40 - (3 - i) * 16, H - BAR_H + 8, on ? 3.6 : 2.6, 0, TAU); c.fill(); }
+}
+let grainOff = 0;
+function render() {
+  const c = ctx; c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
+  c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
+  const chorus = S.sec.id.startsWith('ch');
+  c.save();
+  const zoom = 1 + .012 + S.secP * .03 + S.kick * (chorus ? .022 : .008);
+  c.translate(W / 2, H / 2); c.scale(zoom, zoom); c.translate(-W / 2, -H / 2);
+  if (S.sec.scene === 'clash') c.translate((Math.random() - .5) * S.kick * 10, (Math.random() - .5) * S.kick * 10);
+  SCENES[S.sec.scene](c);
+  c.restore();
+  c.drawImage(VIG, 0, 0);
+  grainOff = (grainOff + 97) % 256; c.save(); c.translate(-grainOff, -(grainOff * 3 % 256)); c.fillStyle = GRAIN_PAT; c.fillRect(0, 0, W + 256, H + 256); c.restore();
+  if (chorus && S.secT < .9) { const f = 1 - S.secT / .9; c.fillStyle = `rgba(255,120,60,${.5 * f * f})`; c.fillRect(0, 0, W, H); }
+  if (frameEl.classList.contains('started')) captions(c);
+  sectionTag(c); titleCard(c); endCard(c);
+  const joinIn = S.sec.cont, joinOut = SECTIONS[S.secIdx + 1] && SECTIONS[S.secIdx + 1].cont;   // 同一场景的相邻段落不淡出黑场
+  const fade = Math.min(joinIn ? 1 : sm(0, .3, S.secT), joinOut ? 1 : 1 - sm(S.sec.len - .4, S.sec.len, S.secT));
+  if (fade < 1) { c.fillStyle = `rgba(0,0,0,${(1 - fade) * .96})`; c.fillRect(0, 0, W, H); }
+  hud(c);
+}
+
+/* ───────────────────────── 播放控制 / UI ───────────────────────── */
+const ui = { pp: $('pp'), tm: $('tm'), seek: $('seek'), sync: $('sync'), rec: $('rec'), toast: $('toast') };
+let toastTimer = 0, idleTimer = 0, rec = null, recChunks = [];
+const toast = (s) => { ui.toast.textContent = s; ui.toast.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => ui.toast.classList.remove('show'), 1800); };
+const isPlaying = () => (P.mode === 'audio' ? !!audioEl && !audioEl.paused && !audioEl.ended : P.playing);
+
+function play() {
+  ensureAudio(); frameEl.classList.add('started');
+  if (P.mode === 'audio') { if (audioEl.ended) audioEl.currentTime = 0; audioEl.play().catch(() => {}); }
+  else { if (P.base >= TOTAL - .05) P.base = 0; P.t0 = performance.now(); P.playing = true; synth.start(); }
+}
+function pause() {
+  if (P.mode === 'audio') { if (audioEl) audioEl.pause(); }
+  else if (P.playing) { P.base = P.time(); P.playing = false; synth.stop(); }
+}
+function seek(t) {
+  t = clamp(t, 0, P.duration() - .01);
+  if (P.mode === 'audio') { if (audioEl) audioEl.currentTime = Math.max(0, t - P.sync); hitLog.length = 0; }
+  else { P.base = t; P.t0 = performance.now(); if (P.playing) synth.start(); }
+}
+function onEnded() { P.playing = false; synth.stop(); if (rec) stopRecord(); }
+function loadFile(f) {
+  if (!f) return;
+  ensureAudio(); pause(); if (P.fileName) URL.revokeObjectURL(audioEl.src);
+  P.mode = 'audio'; P.fileName = f.name; audioEl.src = URL.createObjectURL(f); audioEl.load();
+  toast('已载入：' + f.name); seek(0); play();
+}
+
+function startRecord(from = 0) {
+  if (rec) return stopRecord();
+  if (!window.MediaRecorder) return toast('当前浏览器不支持 MediaRecorder');
+  ensureAudio(); frameEl.classList.add('started');
+  const mime = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find((m) => MediaRecorder.isTypeSupported(m));
+  const stream = new MediaStream([...cv.captureStream(30).getVideoTracks(), ...recDest.stream.getAudioTracks()]);
+  rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8e6 }); recChunks = [];
+  rec.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data); };
+  rec.onstop = () => {
+    const blob = new Blob(recChunks, { type: 'video/webm' }), a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'panzerkampf-mv.webm'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    rec = null; ui.rec.classList.remove('on'); ui.rec.textContent = '● 录制 WebM'; toast('已导出 panzerkampf-mv.webm');
+    window.__mvLastRecording = blob.size;
+  };
+  ui.rec.classList.add('on'); ui.rec.textContent = '■ 停止并保存'; toast('录制中：从头完整播放一遍，结束后自动下载');
+  pause(); seek(from); rec.start(1000); play();
+}
+function stopRecord() { if (rec && rec.state !== 'inactive') rec.stop(); }
+
+$('goDemo').onclick = () => { P.mode = 'demo'; seek(0); play(); };
+ui.pp.onclick = () => (isPlaying() ? pause() : play());
+$('fs').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : frameEl.requestFullscreen && frameEl.requestFullscreen());
+ui.rec.onclick = () => startRecord();
+$('file').onchange = (e) => { loadFile(e.target.files[0]); e.target.value = ''; };
+ui.seek.oninput = () => seek(ui.seek.value / 1000 * P.duration());
+addEventListener('dragover', (e) => e.preventDefault());
+addEventListener('drop', (e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f && /^audio\//.test(f.type)) loadFile(f); });
+addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' && e.target.type !== 'range') return;
+  if (e.code === 'Space') { e.preventDefault(); if (!frameEl.classList.contains('started')) { P.mode = 'demo'; seek(0); } isPlaying() ? pause() : play(); }
+  else if (e.key === 'ArrowRight') seek(P.time() + 5); else if (e.key === 'ArrowLeft') seek(P.time() - 5);
+  else if (e.key === '[' || e.key === ']') { P.sync = Math.round((P.sync + (e.key === ']' ? .1 : -.1)) * 10) / 10; toast(`音画同步偏移 ${P.sync >= 0 ? '+' : ''}${P.sync.toFixed(1)}s`); }
+  else if (e.key === 'f' || e.key === 'F') $('fs').click(); else if (e.key === 'r' || e.key === 'R') { seek(0); play(); }
+});
+const wake = () => { frameEl.classList.remove('idle'); clearTimeout(idleTimer); idleTimer = setTimeout(() => { if (isPlaying()) frameEl.classList.add('idle'); }, 2600); };
+frameEl.addEventListener('pointermove', wake); frameEl.addEventListener('pointerdown', wake);
+
+let last = performance.now(), prevPlaying = false;
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  if (P.mode === 'demo' && P.playing && P.time() >= TOTAL) { P.base = TOTAL; P.playing = false; synth.stop(); onEnded(); }
+  const playing = isPlaying(), t = P.time();
+  updateState(t, dt);
+  render();
+  ui.pp.textContent = playing ? '❚❚' : '▶';
+  const dur = P.duration();
+  ui.tm.textContent = `${fmt(t)} / ${fmt(dur)}`;
+  if (document.activeElement !== ui.seek) ui.seek.value = clamp(t / dur) * 1000;
+  ui.sync.textContent = `同步 ${P.sync >= 0 ? '+' : ''}${P.sync.toFixed(1)}s`;
+  ui.sync.style.display = P.mode === 'audio' ? '' : 'none';
+  if (playing !== prevPlaying) { prevPlaying = playing; wake(); }
+  requestAnimationFrame(frame);
+}
+P.base = 3.5;                                                // 启动页背景：停在片头标题处
+requestAnimationFrame(frame);
+window.__mv = { P, S, SECTIONS, TOTAL, seek, play, pause, loadFile, startRecord, stopRecord, recentHits };
+})();
+</script>
+</body>
+</html>
