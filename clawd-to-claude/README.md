@@ -13,6 +13,7 @@
 | --- | --- |
 | `index.html` | 前端页面：单文件、无依赖，浏览器直接打开。可暂停、拖时间轴、调倍速、切亮/暗主题，并能在页面里直接导出 GIF。 |
 | `clawd-to-claude.gif` | 导出的 GIF，500×500，25 fps，约 11 秒一个循环。 |
+| `clawd-to-claude-dark.gif` | 同一段动画的暗色版，主页 README 在 GitHub 暗色模式下显示它。 |
 | `scripts/export-gif.cjs` | 用 Playwright 无头打开页面，调用页面自带的编码器重新生成 GIF。 |
 
 ## 重新生成 GIF
