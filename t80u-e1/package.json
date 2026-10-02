@@ -1,0 +1,19 @@
+{
+  "name": "t80u-e1-viewer",
+  "private": true,
+  "version": "1.0.0",
+  "description": "T-80U-E1 主战坦克前端三维模型：爆炸拆解、自动装弹机到击发流程、弹种切换、入射分析与模块损伤",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "vite": "^8.3.1",
+    "vite-plugin-singlefile": "^2.3.3"
+  }
+}
